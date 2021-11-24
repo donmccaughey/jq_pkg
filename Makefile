@@ -92,11 +92,11 @@ $(TMP)/jq/install/usr/local/lib/libjq.a \
 $(TMP)/jq/install/usr/local/share/man/man1/jq.1: $(TMP)/jq-installed.stamp.txt
 	@:
 
-$(TMP)/jq-installed.stamp.txt : $(TMP)/jq/build/src/jq | $(TMP)/jq/install
+$(TMP)/jq-installed.stamp.txt : $(TMP)/jq/build/jq | $(TMP)/jq/install
 	cd $(TMP)/jq/build && $(MAKE) DESTDIR=$(TMP)/jq/install install
 	date > $@
 
-$(TMP)/jq/build/src/jq : $(TMP)/jq/build/config.status $(jq_sources)
+$(TMP)/jq/build/jq : $(TMP)/jq/build/config.status $(jq_sources)
 	cd $(TMP)/jq/build && $(MAKE)
 
 $(TMP)/jq/build/config.status : \
@@ -123,12 +123,17 @@ $(TMP)/libjq.a-signed.stamp.txt : $(TMP)/jq/install/usr/local/lib/libjq.a | $$(d
 	date > $@
 
 $(TMP)/jq.pkg : \
-		$(TMP)/jq-signed.stamp.txt \
-		$(TMP)/libjq.a-signed.stamp.txt \
 		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
 		$(TMP)/jq/install/etc/paths.d/jq.path \
+		$(TMP)/jq/install/usr/local/bin/jq \
 		$(TMP)/jq/install/usr/local/include/jq.h \
-		$(TMP)/jq/install/usr/local/share/man/man1/jq.1
+		$(TMP)/jq/install/usr/local/lib/libjq.a \
+		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
+		$(TMP)/jq/install/usr/local/bin/uninstall-jq \
+		$(TMP)/jq/install/usr/local/include/jq.h \
+		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
+		$(TMP)/jq-signed.stamp.txt \
+		$(TMP)/libjq.a-signed.stamp.txt
 	pkgbuild \
 		--root $(TMP)/jq/install \
 		--identifier cc.donm.pkg.jq \
@@ -141,6 +146,20 @@ $(TMP)/jq/install/etc/manpaths.d/jq.manpath : jq.manpath | $$(dir $$@)
 
 $(TMP)/jq/install/etc/paths.d/jq.path : jq.path | $$(dir $$@)
 	cp $< $@
+
+$(TMP)/jq/install/usr/local/bin/uninstall-jq : \
+		uninstall-jq \
+		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
+		$(TMP)/jq/install/etc/paths.d/jq.path \
+		$(TMP)/jq/install/usr/local/bin/jq \
+		$(TMP)/jq/install/usr/local/include/jq.h \
+		$(TMP)/jq/install/usr/local/lib/libjq.a \
+		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
+		| $$(dir $$@)
+	cp $< $@
+	cd $(TMP)/jq/install && find . -type f \! -name .DS_Store | sort >> $@
+	sed -e 's/^\./rm -f /g' -i '' $@
+	chmod a+x $@
 
 $(TMP) \
 $(TMP)/jq/install/etc/manpaths.d \
