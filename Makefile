@@ -1,4 +1,5 @@
 APP_SIGNING_ID ?= Developer ID Application: Donald McCaughey
+INSTALLER_SIGNING_ID ?= Developer ID Installer: Donald McCaughey
 TMP ?= $(abspath tmp)
 
 version := 1.6
@@ -27,15 +28,7 @@ check :
 	test "$(shell lipo -archs $(TMP)/jq/install/usr/local/lib/libjq.a)" = "x86_64 arm64"
 	codesign --verify --strict $(TMP)/jq/install/usr/local/bin/jq
 	codesign --verify --strict $(TMP)/jq/install/usr/local/lib/libjq.a
-
-
-.PHONY : onig
-onig : $(TMP)/onig/install/usr/local/lib/libonig.a
-
-
-.PHONY : jq
-jq : $(TMP)/jq.pkg
-
+	pkgutil --check-signature jq-$(version).pkg
 
 
 ##### compilation flags ##########
@@ -164,5 +157,73 @@ $(TMP)/jq/install/usr/local/bin/uninstall-jq : \
 $(TMP) \
 $(TMP)/jq/install/etc/manpaths.d \
 $(TMP)/jq/install/etc/paths.d :
+	mkdir -p $@
+
+
+##### product ##########
+
+arch_list := $(shell printf '%s' '$(archs)' | sed 's/ / and /g')
+date := $(shell date '+%Y-%m-%d')
+macos := $(shell \
+	system_profiler -detailLevel mini SPSoftwareDataType \
+	| grep 'System Version:' \
+	| awk -F ' ' '{print $$4}' \
+	)
+xcode := $(shell \
+	system_profiler -detailLevel mini SPDeveloperToolsDataType \
+	| grep 'Version:' \
+	| awk -F ' ' '{print $$2}' \
+	)
+
+jq-$(version).pkg : \
+		$(TMP)/jq.pkg \
+		$(TMP)/build-report.txt \
+		$(TMP)/distribution.xml \
+		$(TMP)/resources/background.png \
+		$(TMP)/resources/background-darkAqua.png \
+		$(TMP)/resources/licenses.html \
+		$(TMP)/resources/welcome.html
+	productbuild \
+		--distribution $(TMP)/distribution.xml \
+		--resources $(TMP)/resources \
+		--package-path $(TMP) \
+		--version v$(version)-r$(revision) \
+		--sign '$(INSTALLER_SIGNING_ID)' \
+		$@
+
+$(TMP)/build-report.txt : | $$(dir $$@)
+	printf 'Build Date: %s\n' "$(date)" > $@
+	printf 'Software Version: %s\n' "$(version)" >> $@
+	printf 'Oniguruma Version: %s\n' "$(oniguruma_version)" >> $@
+	printf 'Installer Revision: %s\n' "$(revision)" >> $@
+	printf 'Architectures: %s\n' "$(arch_list)" >> $@
+	printf 'macOS Version: %s\n' "$(macos)" >> $@
+	printf 'Xcode Version: %s\n' "$(xcode)" >> $@
+	printf 'Tag Version: v%s-r%s\n' "$(version)" "$(revision)" >> $@
+	printf 'APP_SIGNING_ID: %s\n' "$(APP_SIGNING_ID)" >> $@
+	printf 'INSTALLER_SIGNING_ID: %s\n' "$(INSTALLER_SIGNING_ID)" >> $@
+	printf 'TMP directory: %s\n' "$(TMP)" >> $@
+	printf 'CFLAGS: %s\n' "$(CFLAGS)" >> $@
+	printf 'Release Title: jq %s for macOS rev %s\n' "$(version)" "$(revision)" >> $@
+	printf 'Description: A signed macOS installer package for `jq` %s.\n' "$(version)" >> $@
+
+$(TMP)/distribution.xml \
+$(TMP)/resources/welcome.html : $(TMP)/% : % | $$(dir $$@)
+	sed \
+		-e 's/{{arch_list}}/$(arch_list)/g' \
+		-e 's/{{date}}/$(date)/g' \
+		-e 's/{{macos}}/$(macos)/g' \
+		-e 's/{{oniguruma_version}}/$(oniguruma_version)/g' \
+		-e 's/{{revision}}/$(revision)/g' \
+		-e 's/{{version}}/$(version)/g' \
+		-e 's/{{xcode}}/$(xcode)/g' \
+		$< > $@
+
+$(TMP)/resources/background.png \
+$(TMP)/resources/background-darkAqua.png \
+$(TMP)/resources/licenses.html : $(TMP)/% : % | $(TMP)/resources
+	cp $< $@
+
+$(TMP)/resources :
 	mkdir -p $@
 
