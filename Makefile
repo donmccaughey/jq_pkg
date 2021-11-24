@@ -1,5 +1,6 @@
 APP_SIGNING_ID ?= Developer ID Application: Donald McCaughey
 INSTALLER_SIGNING_ID ?= Developer ID Installer: Donald McCaughey
+NOTARIZATION_KEYCHAIN_PROFILE ?= Donald McCaughey
 TMP ?= $(abspath tmp)
 
 version := 1.6
@@ -13,6 +14,10 @@ archs := arm64 x86_64
 
 .PHONY : signed-package
 signed-package: jq-$(version).pkg
+
+
+.PHONY : notarize
+notarize : $(TMP)/stapled.stamp.txt
 
 
 .PHONY : clean
@@ -29,6 +34,9 @@ check :
 	codesign --verify --strict $(TMP)/jq/install/usr/local/bin/jq
 	codesign --verify --strict $(TMP)/jq/install/usr/local/lib/libjq.a
 	pkgutil --check-signature jq-$(version).pkg
+	pkgutil --check-signature jq-$(version).pkg
+	spctl --assess --type install jq-$(version).pkg
+	xcrun stapler validate jq-$(version).pkg
 
 
 ##### compilation flags ##########
@@ -226,4 +234,30 @@ $(TMP)/resources/licenses.html : $(TMP)/% : % | $(TMP)/resources
 
 $(TMP)/resources :
 	mkdir -p $@
+
+
+##### notarization ##########
+
+$(TMP)/submit-log.json : jq-$(version).pkg | $$(dir $$@)
+	xcrun notarytool submit $< \
+		--keychain-profile "$(NOTARIZATION_KEYCHAIN_PROFILE)" \
+		--output-format json \
+		--wait \
+		> $@
+
+$(TMP)/submission-id.txt : $(TMP)/submit-log.json | $$(dir $$@)
+	jq --raw-output '.id' < $< > $@
+
+$(TMP)/notarization-log.json : $(TMP)/submission-id.txt | $$(dir $$@)
+	xcrun notarytool log "$$(<$<)" \
+		--keychain-profile "$(NOTARIZATION_KEYCHAIN_PROFILE)" \
+		$@
+
+$(TMP)/notarized.stamp.txt : $(TMP)/notarization-log.json | $$(dir $$@)
+	test "$$(jq --raw-output '.status' < $<)" = "Accepted"
+	date > $@
+
+$(TMP)/stapled.stamp.txt : jq-$(version).pkg $(TMP)/notarized.stamp.txt
+	xcrun stapler staple $<
+	date > $@
 

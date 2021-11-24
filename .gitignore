@@ -1,4 +1,4 @@
 .DS_Store
-wget*.pkg
+jq*.pkg
 tmp
 
