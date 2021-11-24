@@ -45,12 +45,6 @@ arch_flags = $(patsubst %,-arch %,$(archs))
 CFLAGS += $(arch_flags)
 
 
-##### tmp ##########
-
-$(TMP) :
-	mkdir -p $@
-
-
 ##### oniguruma ##########
 
 onig_configure_options := \
@@ -131,6 +125,8 @@ $(TMP)/libjq.a-signed.stamp.txt : $(TMP)/jq/install/usr/local/lib/libjq.a | $$(d
 $(TMP)/jq.pkg : \
 		$(TMP)/jq-signed.stamp.txt \
 		$(TMP)/libjq.a-signed.stamp.txt \
+		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
+		$(TMP)/jq/install/etc/paths.d/jq.path \
 		$(TMP)/jq/install/usr/local/include/jq.h \
 		$(TMP)/jq/install/usr/local/share/man/man1/jq.1
 	pkgbuild \
@@ -139,4 +135,15 @@ $(TMP)/jq.pkg : \
 		--ownership recommended \
 		--version $(version) \
 		$@
+
+$(TMP)/jq/install/etc/manpaths.d/jq.manpath : jq.manpath | $$(dir $$@)
+	cp $< $@
+
+$(TMP)/jq/install/etc/paths.d/jq.path : jq.path | $$(dir $$@)
+	cp $< $@
+
+$(TMP) \
+$(TMP)/jq/install/etc/manpaths.d \
+$(TMP)/jq/install/etc/paths.d :
+	mkdir -p $@
 
