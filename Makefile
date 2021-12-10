@@ -210,6 +210,7 @@ $(TMP)/build-report.txt : | $$(dir $$@)
 	printf 'Tag Version: v%s-r%s\n' "$(version)" "$(revision)" >> $@
 	printf 'APP_SIGNING_ID: %s\n' "$(APP_SIGNING_ID)" >> $@
 	printf 'INSTALLER_SIGNING_ID: %s\n' "$(INSTALLER_SIGNING_ID)" >> $@
+	printf 'NOTARIZATION_KEYCHAIN_PROFILE: %s\n' "$(NOTARIZATION_KEYCHAIN_PROFILE)" >> $@
 	printf 'TMP directory: %s\n' "$(TMP)" >> $@
 	printf 'CFLAGS: %s\n' "$(CFLAGS)" >> $@
 	printf 'Release Title: jq %s for macOS rev %s\n' "$(version)" "$(revision)" >> $@
