@@ -8,12 +8,15 @@ oniguruma_version := 6.9.7.1
 revision := 1
 archs := arm64 x86_64
 
+rev := $(if $(patsubst 1,,$(revision)),-r$(revision),)
+ver := $(version)$(rev)
+
 
 .SECONDEXPANSION :
 
 
 .PHONY : signed-package
-signed-package: jq-$(version).pkg
+signed-package: jq-$(ver).pkg
 
 
 .PHONY : notarize
@@ -33,10 +36,10 @@ check :
 	test "$(shell lipo -archs $(TMP)/jq/install/usr/local/lib/libjq.a)" = "x86_64 arm64"
 	codesign --verify --strict $(TMP)/jq/install/usr/local/bin/jq
 	codesign --verify --strict $(TMP)/jq/install/usr/local/lib/libjq.a
-	pkgutil --check-signature jq-$(version).pkg
-	pkgutil --check-signature jq-$(version).pkg
-	spctl --assess --type install jq-$(version).pkg
-	xcrun stapler validate jq-$(version).pkg
+	pkgutil --check-signature jq-$(ver).pkg
+	pkgutil --check-signature jq-$(ver).pkg
+	spctl --assess --type install jq-$(ver).pkg
+	xcrun stapler validate jq-$(ver).pkg
 
 
 ##### compilation flags ##########
@@ -183,7 +186,7 @@ xcode := $(shell \
 	| awk -F ' ' '{print $$2}' \
 	)
 
-jq-$(version).pkg : \
+jq-$(ver).pkg : \
 		$(TMP)/jq.pkg \
 		$(TMP)/build-report.txt \
 		$(TMP)/distribution.xml \
@@ -239,7 +242,7 @@ $(TMP)/resources :
 
 ##### notarization ##########
 
-$(TMP)/submit-log.json : jq-$(version).pkg | $$(dir $$@)
+$(TMP)/submit-log.json : jq-$(ver).pkg | $$(dir $$@)
 	xcrun notarytool submit $< \
 		--keychain-profile "$(NOTARIZATION_KEYCHAIN_PROFILE)" \
 		--output-format json \
@@ -258,7 +261,7 @@ $(TMP)/notarized.stamp.txt : $(TMP)/notarization-log.json | $$(dir $$@)
 	test "$$(jq --raw-output '.status' < $<)" = "Accepted"
 	date > $@
 
-$(TMP)/stapled.stamp.txt : jq-$(version).pkg $(TMP)/notarized.stamp.txt
+$(TMP)/stapled.stamp.txt : jq-$(ver).pkg $(TMP)/notarized.stamp.txt
 	xcrun stapler staple $<
 	date > $@
 
