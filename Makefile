@@ -37,7 +37,6 @@ check :
 	codesign --verify --strict $(TMP)/jq/install/usr/local/bin/jq
 	codesign --verify --strict $(TMP)/jq/install/usr/local/lib/libjq.a
 	pkgutil --check-signature jq-$(ver).pkg
-	pkgutil --check-signature jq-$(ver).pkg
 	spctl --assess --type install jq-$(ver).pkg
 	xcrun stapler validate jq-$(ver).pkg
 
