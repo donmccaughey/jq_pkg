@@ -126,7 +126,6 @@ $(TMP)/jq/install :
 ##### pkg ##########
 
 $(TMP)/jq.pkg : \
-		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
 		$(TMP)/jq/install/etc/paths.d/jq.path \
 		$(TMP)/jq/install/usr/local/bin/jq \
 		$(TMP)/jq/install/usr/local/include/jq.h \
@@ -142,15 +141,11 @@ $(TMP)/jq.pkg : \
 		--version $(version) \
 		$@
 
-$(TMP)/jq/install/etc/manpaths.d/jq.manpath : jq.manpath | $$(dir $$@)
-	cp $< $@
-
 $(TMP)/jq/install/etc/paths.d/jq.path : jq.path | $$(dir $$@)
 	cp $< $@
 
 $(TMP)/jq/install/usr/local/bin/uninstall-jq : \
 		uninstall-jq \
-		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
 		$(TMP)/jq/install/etc/paths.d/jq.path \
 		$(TMP)/jq/install/usr/local/bin/jq \
 		$(TMP)/jq/install/usr/local/include/jq.h \
@@ -163,7 +158,6 @@ $(TMP)/jq/install/usr/local/bin/uninstall-jq : \
 	chmod a+x $@
 
 $(TMP) \
-$(TMP)/jq/install/etc/manpaths.d \
 $(TMP)/jq/install/etc/paths.d :
 	mkdir -p $@
 
