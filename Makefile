@@ -125,15 +125,7 @@ $(TMP)/jq/install :
 
 ##### pkg ##########
 
-$(TMP)/jq.pkg : \
-		$(TMP)/jq/install/etc/paths.d/jq.path \
-		$(TMP)/jq/install/usr/local/bin/jq \
-		$(TMP)/jq/install/usr/local/include/jq.h \
-		$(TMP)/jq/install/usr/local/lib/libjq.a \
-		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
-		$(TMP)/jq/install/usr/local/bin/uninstall-jq \
-		$(TMP)/jq/install/usr/local/include/jq.h \
-		$(TMP)/jq/install/usr/local/share/man/man1/jq.1
+$(TMP)/jq.pkg : $(TMP)/jq/install/usr/local/bin/uninstall-jq
 	pkgbuild \
 		--root $(TMP)/jq/install \
 		--identifier cc.donm.pkg.jq \
