@@ -97,6 +97,14 @@ $(TMP)/jq/install/usr/local/share/man/man1/jq.1: $(TMP)/jq-installed.stamp.txt
 
 $(TMP)/jq-installed.stamp.txt : $(TMP)/jq/build/jq | $(TMP)/jq/install
 	cd $(TMP)/jq/build && $(MAKE) DESTDIR=$(TMP)/jq/install install
+	xcrun codesign \
+			--sign "$(APP_SIGNING_ID)" \
+			--options runtime  \
+			$(TMP)/jq/install/usr/local/bin/jq
+	xcrun codesign \
+			--sign "$(APP_SIGNING_ID)" \
+			--options runtime \
+			$(TMP)/jq/install/usr/local/lib/libjq.a
 	date > $@
 
 $(TMP)/jq/build/jq : $(TMP)/jq/build/config.status $(jq_sources)
@@ -117,14 +125,6 @@ $(TMP)/jq/install :
 
 ##### pkg ##########
 
-$(TMP)/jq-signed.stamp.txt : $(TMP)/jq/install/usr/local/bin/jq | $$(dir $$@)
-	xcrun codesign --sign "$(APP_SIGNING_ID)" --options runtime  $<
-	date > $@
-
-$(TMP)/libjq.a-signed.stamp.txt : $(TMP)/jq/install/usr/local/lib/libjq.a | $$(dir $$@)
-	xcrun codesign --sign "$(APP_SIGNING_ID)" --options runtime  $<
-	date > $@
-
 $(TMP)/jq.pkg : \
 		$(TMP)/jq/install/etc/manpaths.d/jq.manpath \
 		$(TMP)/jq/install/etc/paths.d/jq.path \
@@ -134,9 +134,7 @@ $(TMP)/jq.pkg : \
 		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
 		$(TMP)/jq/install/usr/local/bin/uninstall-jq \
 		$(TMP)/jq/install/usr/local/include/jq.h \
-		$(TMP)/jq/install/usr/local/share/man/man1/jq.1 \
-		$(TMP)/jq-signed.stamp.txt \
-		$(TMP)/libjq.a-signed.stamp.txt
+		$(TMP)/jq/install/usr/local/share/man/man1/jq.1
 	pkgbuild \
 		--root $(TMP)/jq/install \
 		--identifier cc.donm.pkg.jq \
