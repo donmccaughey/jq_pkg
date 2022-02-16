@@ -34,6 +34,7 @@ check :
 	test "$(shell lipo -archs $(TMP)/onig/install/usr/local/lib/libonig.a)" = "x86_64 arm64"
 	test "$(shell lipo -archs $(TMP)/jq/install/usr/local/bin/jq)" = "x86_64 arm64"
 	test "$(shell lipo -archs $(TMP)/jq/install/usr/local/lib/libjq.a)" = "x86_64 arm64"
+	test "$(shell ./tools/dylibs --no-sys-libs --count $(TMP)/jq/install/usr/local/bin/jq) dylibs" = "0 dylibs"
 	codesign --verify --strict $(TMP)/jq/install/usr/local/bin/jq
 	codesign --verify --strict $(TMP)/jq/install/usr/local/lib/libjq.a
 	pkgutil --check-signature jq-$(ver).pkg
