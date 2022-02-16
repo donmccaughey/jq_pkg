@@ -16,11 +16,11 @@ ver := $(version)$(rev)
 
 
 .PHONY : signed-package
-signed-package: jq-$(ver).pkg
+signed-package: $(TMP)/jq-$(ver)-unnotarized.pkg
 
 
 .PHONY : notarize
-notarize : $(TMP)/stapled.stamp.txt
+notarize : jq-$(ver).pkg
 
 
 .PHONY : clean
@@ -169,7 +169,7 @@ xcode := $(shell \
 	| awk -F ' ' '{print $$2}' \
 	)
 
-jq-$(ver).pkg : \
+$(TMP)/jq-$(ver)-unnotarized.pkg : \
 		$(TMP)/jq.pkg \
 		$(TMP)/build-report.txt \
 		$(TMP)/distribution.xml \
@@ -225,7 +225,7 @@ $(TMP)/resources :
 
 ##### notarization ##########
 
-$(TMP)/submit-log.json : jq-$(ver).pkg | $$(dir $$@)
+$(TMP)/submit-log.json : $(TMP)/jq-$(ver)-unnotarized.pkg | $$(dir $$@)
 	xcrun notarytool submit $< \
 		--keychain-profile "$(NOTARIZATION_KEYCHAIN_PROFILE)" \
 		--output-format json \
@@ -244,7 +244,7 @@ $(TMP)/notarized.stamp.txt : $(TMP)/notarization-log.json | $$(dir $$@)
 	test "$$(jq --raw-output '.status' < $<)" = "Accepted"
 	date > $@
 
-$(TMP)/stapled.stamp.txt : jq-$(ver).pkg $(TMP)/notarized.stamp.txt
-	xcrun stapler staple $<
-	date > $@
+jq-$(ver).pkg : $(TMP)/jq-$(ver)-unnotarized.pkg $(TMP)/notarized.stamp.txt
+	cp $< $@
+	xcrun stapler staple $@
 
