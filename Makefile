@@ -4,8 +4,8 @@ NOTARIZATION_KEYCHAIN_PROFILE ?= Donald McCaughey
 TMP ?= $(abspath tmp)
 
 version := 1.6
-oniguruma_version := 6.9.7.1
-revision := 1
+oniguruma_version := 6.9.8
+revision := 2
 archs := arm64 x86_64
 
 rev := $(if $(patsubst 1,,$(revision)),-r$(revision),)
