@@ -201,7 +201,8 @@ $(TMP)/build-report.txt : | $$(dir $$@)
 	printf 'CFLAGS: %s\n' "$(CFLAGS)" >> $@
 	printf 'Tag: v%s-r%s\n' "$(version)" "$(revision)" >> $@
 	printf 'Tag Title: jq %s for macOS rev %s\n' "$(version)" "$(revision)" >> $@
-	printf 'Tag Message: A signed and notarized universal installer package for `jq` %s.\n' "$(version)" >> $@
+	printf 'Tag Message: A signed and notarized universal installer package for `jq` %s, built with `oniguruma` %s.\n' \
+		"$(version)" "$(oniguruma_version)" >> $@
 
 $(TMP)/distribution.xml \
 $(TMP)/resources/welcome.html : $(TMP)/% : % | $$(dir $$@)
