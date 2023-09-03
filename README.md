@@ -13,10 +13,6 @@ A recent version of Xcode and an existing version of [`jq`][2] are needed to
 build and notarize this installer package.  An [Apple Developer][3] account is
 required to generate the credentials needed to sign and notarize.
 
-Building was last tested on an Apple Silicon Mac with macOS Monterey 12.3.1 and
-Xcode 13.3.1.  Installation was last tested on both Intel and Apple Silicon
-Macs running Monterey.
-
 [2]: https://stedolan.github.io/jq/
 [3]: https://developer.apple.com
 
