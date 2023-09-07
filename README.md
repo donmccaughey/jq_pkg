@@ -1,10 +1,10 @@
-# jq 1.6 for macOS
+# jq 1.7 for macOS
 
 This project builds a signed and notarized universal macOS installer package
 for [`jq`][1], a lightweight and flexible command line JSON processor.  It
-contains the source distribution for `jq` 1.6 and [`oniguruma`][2] 6.9.8.
+contains the source distribution for `jq` 1.7 and [`oniguruma`][2] 6.9.8.
 
-[1]: https://stedolan.github.io/jq/
+[1]: https://jqlang.github.io/jq/
 [2]: https://github.com/kkos/oniguruma
 
 ## Prerequesites
@@ -13,7 +13,7 @@ A recent version of Xcode and an existing version of [`jq`][2] are needed to
 build and notarize this installer package.  An [Apple Developer][3] account is
 required to generate the credentials needed to sign and notarize.
 
-[2]: https://stedolan.github.io/jq/
+[2]: https://jqlang.github.io/jq/
 [3]: https://developer.apple.com
 
 ## Building
@@ -46,7 +46,7 @@ To build and sign the executable and installer, run:
         $ make [APP_SIGNING_ID="<cert name 1>"] [INSTALLER_SIGNING_ID="<cert name 2>"] [TMP="<build dir>"]
 
 Intermediate files are generated in the temp directory; the signed installer 
-package is written into the project root with the name `jq-1.6-r1.pkg`.  
+package is written into the project root with the name `jq-1.7.pkg`.  
 To notarize the signed installer package, run:
 
         $ make notarize [NOTARIZATION_KEYCHAIN_PROFILE="<profile name>"] [TMP="<build dir>"]
@@ -56,7 +56,7 @@ success.  Check the file `$(TMP)/notarization-log.json` for detailed
 information if notarization fails.  The signed installer is stapled in place
 if notarization succeeds.  Use the command:
 
-        $ xcrun stapler validate --verbose jq-1.6-r1.pkg
+        $ xcrun stapler validate --verbose jq-1.7.pkg
 
 to check the notarization state of the installer package.
 

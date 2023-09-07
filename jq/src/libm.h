@@ -214,7 +214,7 @@ LIBM_DDD(fmod)
 #else
 LIBM_DDD_NO(fmod)
 #endif
-#ifdef HAVE_GAMMA
+#if defined(HAVE_GAMMA)
 LIBM_DD(gamma)
 #else
 LIBM_DD_NO(gamma)
