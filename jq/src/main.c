@@ -161,7 +161,6 @@ enum {
   RAW_NO_LF             = 1024,
   UNBUFFERED_OUTPUT     = 2048,
   EXIT_STATUS           = 4096,
-  EXIT_STATUS_EXACT     = 8192,
   SEQ                   = 16384,
   RUN_TESTS             = 32768,
   /* debugging only */
@@ -231,7 +230,6 @@ static int process(jq_state *jq, jv value, int flags, int dumpopts, int options)
   }
   if (jq_halted(jq)) {
     // jq program invoked `halt` or `halt_error`
-    options |= EXIT_STATUS_EXACT;
     jv exit_code = jq_get_exit_code(jq);
     if (!jv_is_valid(exit_code))
       ret = JQ_OK;
@@ -312,6 +310,7 @@ int umain(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
 #endif
   jq_state *jq = NULL;
+  jq_util_input_state *input_state = NULL;
   int ret = JQ_OK_NO_OUTPUT;
   int compiled = 0;
   int parser_flags = 0;
@@ -319,11 +318,16 @@ int main(int argc, char* argv[]) {
   int last_result = -1; /* -1 = no result, 0=null or false, 1=true */
   int badwrite;
   int options = 0;
-  jv ARGS = jv_array(); /* positional arguments */
-  jv program_arguments = jv_object(); /* named arguments */
 
 #ifdef HAVE_SETLOCALE
   (void) setlocale(LC_ALL, "");
+#endif
+
+#ifdef __OpenBSD__
+  if (pledge("stdio rpath", NULL) == -1) {
+    perror("pledge");
+    exit(JQ_ERROR_SYSTEM);
+  }
 #endif
 
 #ifdef WIN32
@@ -334,11 +338,14 @@ int main(int argc, char* argv[]) {
   _setmode(fileno(stderr), _O_TEXT | _O_U8TEXT);
 #endif
 
+  jv ARGS = jv_array(); /* positional arguments */
+  jv program_arguments = jv_object(); /* named arguments */
+
   if (argc) progname = argv[0];
 
   jq = jq_init();
   if (jq == NULL) {
-    perror("malloc");
+    perror("jq_init");
     ret = JQ_ERROR_SYSTEM;
     goto out;
   }
@@ -346,7 +353,7 @@ int main(int argc, char* argv[]) {
   int dumpopts = JV_PRINT_INDENT_FLAGS(2);
   const char* program = 0;
 
-  jq_util_input_state *input_state = jq_util_input_init(NULL, NULL); // XXX add err_cb
+  input_state = jq_util_input_init(NULL, NULL); // XXX add err_cb
 
   int further_args_are_strings = 0;
   int further_args_are_json = 0;
@@ -355,8 +362,10 @@ int main(int argc, char* argv[]) {
   size_t short_opts = 0;
   jv lib_search_paths = jv_null();
   for (int i=1; i<argc; i++, short_opts = 0) {
-    if (args_done) {
-      if (further_args_are_strings) {
+    if (args_done || !isoptish(argv[i])) {
+      if (!program) {
+        program = argv[i];
+      } else if (further_args_are_strings) {
         ARGS = jv_array_append(ARGS, jv_string(argv[i]));
       } else if (further_args_are_json) {
         jv v =  jv_parse(argv[i]);
@@ -370,26 +379,7 @@ int main(int argc, char* argv[]) {
         nfiles++;
       }
     } else if (!strcmp(argv[i], "--")) {
-      if (!program) usage(2, 1);
       args_done = 1;
-    } else if (!isoptish(argv[i])) {
-      if (program) {
-        if (further_args_are_strings) {
-          ARGS = jv_array_append(ARGS, jv_string(argv[i]));
-        } else if (further_args_are_json) {
-          jv v =  jv_parse(argv[i]);
-          if (!jv_is_valid(v)) {
-            fprintf(stderr, "%s: invalid JSON text passed to --jsonargs\n", progname);
-            die();
-          }
-          ARGS = jv_array_append(ARGS, v);
-        } else {
-          jq_util_input_add_input(input_state, argv[i]);
-          nfiles++;
-        }
-      } else {
-        program = argv[i];
-      }
     } else {
       if (argv[i][1] == 'L') {
         if (jv_get_kind(lib_search_paths) == JV_KIND_NULL)
@@ -783,7 +773,7 @@ out:
   jq_util_input_free(&input_state);
   jq_teardown(&jq);
 
-  if (options & (EXIT_STATUS|EXIT_STATUS_EXACT)) {
+  if (options & EXIT_STATUS) {
     if (ret != JQ_OK_NO_OUTPUT)
       jq_exit_with_status(ret);
     else

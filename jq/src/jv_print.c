@@ -30,8 +30,8 @@
 static char color_bufs[8][16];
 static const char *color_bufps[8];
 static const char* def_colors[] =
-  {COL("0;90"),    COL("0;37"),      COL("0;37"),     COL("0;37"),
-   COL("0;32"),    COL("1;37"),      COL("1;37"),     COL("1;34")};
+  {COL("0;90"),    COL("0;39"),      COL("0;39"),     COL("0;39"),
+   COL("0;32"),    COL("1;39"),      COL("1;39"),     COL("1;34")};
 #define FIELD_COLOR (colors[7])
 
 static const char **colors = def_colors;
@@ -79,7 +79,7 @@ static void put_buf(const char *s, int len, FILE *fout, jv *strout, int is_tty) 
     if (len == -1)
       len = strlen(s);
     wl = MultiByteToWideChar(CP_UTF8, 0, s, len, NULL, 0);
-    ws = jv_mem_calloc((wl + 1), sizeof(*ws));
+    ws = jv_mem_calloc(wl + 1, sizeof(*ws));
     if (!ws)
       return;
     wl = MultiByteToWideChar(CP_UTF8, 0, s, len, ws, wl + 1);

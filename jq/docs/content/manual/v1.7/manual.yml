@@ -1,5 +1,5 @@
 ---
-headline: jq 1.6 Manual
+headline: jq 1.7 Manual
 
 history: |
 
@@ -81,9 +81,18 @@ sections:
       output(s) of the filter are written to standard output, as a
       sequence of newline-separated JSON data.
 
+      The simplest and most common filter (or jq program) is `.`,
+      which is the identity operator, copying the inputs of the jq
+      processor to the output stream.  Because the default behavior of
+      the jq processor is to read JSON texts from the input stream,
+      and to pretty-print outputs, the `.` program's main use is to
+      validate and pretty-print the inputs.  The jq programming
+      language is quite rich and allows for much more than just
+      validation and pretty-printing.
+
       Note: it is important to mind the shell's quoting rules.  As a
       general rule it's best to always quote (with single-quote
-      characters) the jq program, as too many characters with special
+      characters on Unix shells) the jq program, as too many characters with special
       meaning to jq are also shell meta-characters.  For example, `jq
       "foo"` will fail on most Unix shells because that will be the same
       as `jq foo`, which will generally fail because `foo is not
@@ -99,6 +108,9 @@ sections:
       * Unix shells: `jq '.["foo"]'`
       * Powershell: `jq '.[\"foo\"]'`
       * Windows command shell: `jq ".[\"foo\"]"`
+
+      Note: jq allows user-defined functions, but every jq program
+      must have a top-level expression.
 
       You can affect how jq reads and writes its input and output
       using some command-line options:
@@ -135,6 +147,12 @@ sections:
         formatted as a JSON string with quotes. This can be useful for
         making jq filters talk to non-JSON-based systems.
 
+      * `--raw-output0`:
+
+        Like `-r` but jq will print NUL instead of newline after each output.
+        This can be useful when the values being output can contain newlines.
+        When the output value contains NUL, jq exits with non-zero code.
+
       * `--join-output` / `-j`:
 
         Like `-r` but jq won't print a newline after each output.
@@ -156,6 +174,8 @@ sections:
         By default, jq outputs colored JSON if writing to a
         terminal. You can force it to produce color even if writing to
         a pipe or a file using `-C`, and disable color with `-M`.
+        When the `NO_COLOR` environment variable is not empty, jq disables
+        colored output by default, but you can enable it by `-C`.
 
         Colors can be configured with the `JQ_COLORS` environment
         variable (see below).
@@ -184,6 +204,16 @@ sections:
         This is useful for processing very large inputs.  Use this in
         conjunction with filtering and the `reduce` and `foreach` syntax
         to reduce large inputs incrementally.
+
+      * `--stream-errors`:
+
+        Like `--stream`, but invalid JSON inputs yield array values
+        where the first element is the error and the second is a path.
+        For example, `["a",n]` produces `["Invalid literal at line 1,
+        column 7",[1]]`.
+
+        Implies `--stream`.  Invalid JSON inputs produce no error values
+        when `--stream` without `--stream-errors`.
 
       * `--seq`:
 
@@ -239,14 +269,6 @@ sections:
         available in the program and has a string whose contents are to the texts
         in the file named `bar`.
 
-      * `--argfile variable-name filename`:
-
-        Do not use.  Use `--slurpfile` instead.
-
-        (This option is like `--slurpfile`, but when the file has just
-        one text, then that is used, else an array of texts is used as
-        in `--slurpfile`.)
-
       * `--args`:
 
         Remaining arguments are positional string arguments.  These are
@@ -269,13 +291,31 @@ sections:
         Another way to set the exit status is with the `halt_error`
         builtin function.
 
+      * `--binary` / `-b`:
+
+        Windows users using WSL, MSYS2, or Cygwin, should use this option
+        when using a native jq.exe, otherwise jq will turn newlines (LFs)
+        into carriage-return-then-newline (CRLF).
+
       * `--version` / `-V`:
 
         Output the jq version and exit with zero.
 
+      * `--build-configuration`:
+
+        Output the build configuration of jq and exit with zero.
+        This output has no supported format or structure and may change
+        without notice in future releases.
+
       * `--help` / `-h`:
 
         Output the jq help and exit with zero.
+
+      * `--`:
+
+        Terminates argument processing.  Remaining arguments are
+        positional, either strings, JSON texts, or input filenames,
+        according to whether `--args` or `--jsonargs` were given.
 
       * `--run-tests [filename]`:
 
@@ -296,30 +336,85 @@ sections:
       - title: "Identity: `.`"
         body: |
 
-          The absolute simplest filter is `.` .  This is a filter that
-          takes its input and produces it unchanged as output.  That is,
-          this is the identity operator.
+          The absolute simplest filter is `.` .  This filter takes its
+          input and produces the same value as output.  That is, this
+          is the identity operator.
 
-          Since jq by default pretty-prints all output, this trivial
-          program can be a useful way of formatting JSON output from,
-          say, `curl`.
+          Since jq by default pretty-prints all output, a trivial
+          program consisting of nothing but `.` can be used to format
+          JSON output from, say, `curl`.
+
+          Although the identity filter never modifies the value of its
+          input, jq processing can sometimes make it appear as though
+          it does.  For example, using the current implementation of
+          jq, we would see that the expression:
+
+              1E1234567890 | .
+
+          produces `1.7976931348623157e+308` on at least one platform.
+          This is because, in the process of parsing the number, this
+          particular version of jq has converted it to an IEEE754
+          double-precision representation, losing precision.
+
+          The way in which jq handles numbers has changed over time
+          and further changes are likely within the parameters set by
+          the relevant JSON standards.  The following remarks are
+          therefore offered with the understanding that they are
+          intended to be descriptive of the current version of jq and
+          should not be interpreted as being prescriptive:
+
+          (1) Any arithmetic operation on a number that has not
+          already been converted to an IEEE754 double precision
+          representation will trigger a conversion to the IEEE754
+          representation.
+
+          (2) jq will attempt to maintain the original decimal
+          precision of number literals, but in expressions such
+          `1E1234567890`, precision will be lost if the exponent is
+          too large.
+
+          (3) In jq programs, a leading minus sign will trigger the
+          conversion of the number to an IEEE754 representation.
+
+          (4) Comparisons are carried out using the untruncated
+          big decimal representation of numbers if available, as
+          illustrated in one of the following examples.
 
         examples:
-          - program: '.'
+          - program: "."
             input: '"Hello, world!"'
             output: ['"Hello, world!"']
 
+          - program: "."
+            input: "0.12345678901234567890123456789"
+            output: ["0.12345678901234567890123456789"]
+
+          - program: "[., tojson]"
+            input: "12345678909876543212345"
+            output: ['[12345678909876543212345,"12345678909876543212345"]']
+
+          - program: ". < 0.12345678901234567890123456788"
+            input: "0.12345678901234567890123456789"
+            output: ["false"]
+
+          - program: "map([., . == 1]) | tojson"
+            input: "[1, 1.000, 1.0, 100e-2]"
+            output: ['"[[1,true],[1.000,true],[1.0,true],[1.00,true]]"']
+
+          - program: ". as $big | [$big, $big + 1] | map(. > 10000000000000000000000000000000)"
+            input: "10000000000000000000000000000001"
+            output: ["[true, false]"]
 
       - title: "Object Identifier-Index: `.foo`, `.foo.bar`"
         body: |
 
-          The simplest *useful* filter is `.foo`. When given a
-          JSON object (aka dictionary or hash) as input, it produces
-          the value at the key "foo", or null if there's none present.
+          The simplest *useful* filter has the form `.foo`. When given a
+          JSON object (aka dictionary or hash) as input, `.foo` produces
+          the value at the key "foo" if the key is present, or null otherwise.
 
-          A filter of the form `.foo.bar` is equivalent to `.foo|.bar`.
+          A filter of the form `.foo.bar` is equivalent to `.foo | .bar`.
 
-          This syntax only works for simple, identifier-like keys, that
+          The `.foo` syntax only works for simple, identifier-like keys, that
           is, keys that are all made of alphanumeric characters and
           underscore, and which do not start with a digit.
 
@@ -328,18 +423,20 @@ sections:
           `."foo$"`, or else `.["foo$"]`.
 
           For example `.["foo::bar"]` and `.["foo.bar"]` work while
-          `.foo::bar` does not, and `.foo.bar` means `.["foo"].["bar"]`.
+          `.foo::bar` does not.
 
         examples:
-          - program: '.foo'
+          - program: ".foo"
             input: '{"foo": 42, "bar": "less interesting data"}'
-            output: ['42']
-          - program: '.foo'
+            output: ["42"]
+
+          - program: ".foo"
             input: '{"notfoo": true, "alsonotfoo": false}'
-            output: ['null']
+            output: ["null"]
+
           - program: '.["foo"]'
             input: '{"foo": 42}'
-            output: ['42']
+            output: ["42"]
 
       - title: "Optional Object Identifier-Index: `.foo?`"
         body: |
@@ -348,18 +445,18 @@ sections:
           object.
 
         examples:
-          - program: '.foo?'
+          - program: ".foo?"
             input: '{"foo": 42, "bar": "less interesting data"}'
-            output: ['42']
-          - program: '.foo?'
+            output: ["42"]
+          - program: ".foo?"
             input: '{"notfoo": true, "alsonotfoo": false}'
-            output: ['null']
+            output: ["null"]
           - program: '.["foo"]?'
             input: '{"foo": 42}'
-            output: ['42']
-          - program: '[.foo?]'
-            input: '[1,2]'
-            output: ['[]']
+            output: ["42"]
+          - program: "[.foo?]"
+            input: "[1,2]"
+            output: ["[]"]
 
       - title: "Object Index: `.[<string>]`"
         body: |
@@ -379,17 +476,17 @@ sections:
           element, -2 referring to the next to last element, and so on.
 
         examples:
-          - program: '.[0]'
+          - program: ".[0]"
             input: '[{"name":"JSON", "good":true}, {"name":"XML", "good":false}]'
             output: ['{"name":"JSON", "good":true}']
 
-          - program: '.[2]'
+          - program: ".[2]"
             input: '[{"name":"JSON", "good":true}, {"name":"XML", "good":false}]'
-            output: ['null']
+            output: ["null"]
 
-          - program: '.[-2]'
-            input: '[1,2,3]'
-            output: ['2']
+          - program: ".[-2]"
+            input: "[1,2,3]"
+            output: ["2"]
 
       - title: "Array/String Slice: `.[<number>:<number>]`"
         body: |
@@ -404,19 +501,19 @@ sections:
           Indices are zero-based.
 
         examples:
-          - program: '.[2:4]'
+          - program: ".[2:4]"
             input: '["a","b","c","d","e"]'
             output: ['["c", "d"]']
 
-          - program: '.[2:4]'
+          - program: ".[2:4]"
             input: '"abcdefghi"'
             output: ['"cd"']
 
-          - program: '.[:3]'
+          - program: ".[:3]"
             input: '["a","b","c","d","e"]'
             output: ['["a", "b", "c"]']
 
-          - program: '.[-2:]'
+          - program: ".[-2:]"
             input: '["a","b","c","d","e"]'
             output: ['["d", "e"]']
 
@@ -433,24 +530,26 @@ sections:
           You can also use this on an object, and it will return all
           the values of the object.
 
+          Note that the iterator operator is a generator of values.
+
         examples:
-          - program: '.[]'
+          - program: ".[]"
             input: '[{"name":"JSON", "good":true}, {"name":"XML", "good":false}]'
             output:
               - '{"name":"JSON", "good":true}'
               - '{"name":"XML", "good":false}'
 
-          - program: '.[]'
-            input: '[]'
+          - program: ".[]"
+            input: "[]"
             output: []
 
-          - program: '.foo[]'
+          - program: ".foo[]"
             input: '{"foo":[1,2,3]}'
-            output: ['1','2','3']
+            output: ["1", "2", "3"]
 
-          - program: '.[]'
+          - program: ".[]"
             input: '{"a": 1, "b": 1}'
-            output: ['1', '1']
+            output: ["1", "1"]
 
       - title: "`.[]?`"
         body: |
@@ -470,16 +569,18 @@ sections:
           .bar`, produces both the "foo" fields and "bar" fields as
           separate outputs.
 
+          The `,` operator is one way to contruct generators.
+
         examples:
-          - program: '.foo, .bar'
+          - program: ".foo, .bar"
             input: '{"foo": 42, "bar": "something else", "baz": true}'
-            output: ['42', '"something else"']
+            output: ["42", '"something else"']
 
           - program: ".user, .projects[]"
             input: '{"user":"stedolan", "projects": ["jq", "wikiflow"]}'
             output: ['"stedolan"', '"jq"', '"wikiflow"']
 
-          - program: '.[4,2]'
+          - program: ".[4,2]"
             input: '["a","b","c","d","e"]'
             output: ['"e"', '"c"']
 
@@ -488,13 +589,13 @@ sections:
 
           The | operator combines two filters by feeding the output(s) of
           the one on the left into the input of the one on the right. It's
-          pretty much the same as the Unix shell's pipe, if you're used to
-          that.
+          similar to the Unix shell's pipe, if you're used to that.
 
           If the one on the left produces multiple results, the one on
           the right will be run for each of those results. So, the
           expression `.[] | .foo` retrieves the "foo" field of each
-          element of the input array.
+          element of the input array.  This is a cartesian product,
+          which can be surprising.
 
           Note that `.a.b.c` is the same as `.a | .b | .c`.
 
@@ -504,7 +605,7 @@ sections:
           middle refers to whatever value `.a` produced.
 
         examples:
-          - program: '.[] | .name'
+          - program: ".[] | .name"
             input: '[{"name":"JSON", "good":true}, {"name":"XML", "good":false}]'
             output: ['"JSON"', '"XML"']
 
@@ -515,9 +616,9 @@ sections:
           programming language.
 
         examples:
-          - program: '(. + 2) * 5'
-            input: '1'
-            output: ['15']
+          - program: "(. + 2) * 5"
+            input: "1"
+            output: ["15"]
 
   - title: Types and Values
     body: |
@@ -531,6 +632,16 @@ sections:
       values take an input and produce an output - `42` is a valid jq
       expression that takes an input, ignores it, and returns 42
       instead.
+
+      Numbers in jq are internally represented by their IEEE754 double
+      precision approximation. Any arithmetic operation with numbers,
+      whether they are literals or results of previous filters, will
+      produce a double precision floating point result.
+
+      However, when parsing a literal jq will store the original literal
+      string. If no mutation is applied to this value then it will make
+      to the output in its original form, even if conversion to double
+      would result in a loss.
 
     entries:
       - title: "Array construction: `[]`"
@@ -559,8 +670,8 @@ sections:
             input: '{"user":"stedolan", "projects": ["jq", "wikiflow"]}'
             output: ['["stedolan", "jq", "wikiflow"]']
           - program: "[ .[] | . * 2]"
-            input: '[1, 2, 3]'
-            output: ['[2, 4, 6]']
+            input: "[1, 2, 3]"
+            output: ["[2, 4, 6]"]
 
       - title: "Object Construction: `{}`"
         body: |
@@ -569,13 +680,16 @@ sections:
           dictionaries or hashes), as in: `{"a": 42, "b": 17}`.
 
           If the keys are "identifier-like", then the quotes can be left
-          off, as in `{a:42, b:17}`.  Keys generated by expressions need
-          to be parenthesized, e.g., `{("a"+"b"):59}`.
+          off, as in `{a:42, b:17}`.  Variable references as key
+          expressions use the value of the variable as the key.  Key
+          expressions other than constant literals, identifiers, or
+          variable references, need to be parenthesized, e.g.,
+          `{("a"+"b"):59}`.
 
-          The value can be any expression (although you may need to
-          wrap it in parentheses if it's a complicated one), which gets
-          applied to the {} expression's input (remember, all filters
-          have an input and an output).
+          The value can be any expression (although you may need to wrap
+          it in parentheses if, for example, it contains colons), which
+          gets applied to the {} expression's input (remember, all
+          filters have an input and an output).
 
               {foo: .bar}
 
@@ -613,13 +727,23 @@ sections:
 
               {"stedolan": ["JQ Primer", "More JQ"]}
 
+          Variable references as keys use the value of the variable as
+          the key.  Without a value then the variable's name becomes the
+          key and its value becomes the value,
+
+              "f o o" as $foo | "b a r" as $bar | {$foo, $bar:$foo}
+
+          produces
+
+              {"foo":"f o o","b a r":"f o o"}
+
         examples:
-          - program: '{user, title: .titles[]}'
+          - program: "{user, title: .titles[]}"
             input: '{"user":"stedolan","titles":["JQ Primer", "More JQ"]}'
             output:
               - '{"user":"stedolan", "title": "JQ Primer"}'
               - '{"user":"stedolan", "title": "More JQ"}'
-          - program: '{(.user): .titles}'
+          - program: "{(.user): .titles}"
             input: '{"user":"stedolan","titles":["JQ Primer", "More JQ"]}'
             output: ['{"stedolan": ["JQ Primer", "More JQ"]}']
 
@@ -637,9 +761,9 @@ sections:
           (also see below) and the `?` operator.
 
         examples:
-          - program: '.. | .a?'
+          - program: ".. | .a?"
             input: '[[{"a":1}]]'
-            output: ['1']
+            output: ["1"]
 
   - title: Builtin operators and functions
     body: |
@@ -649,6 +773,18 @@ sections:
       etc.). However, jq never does implicit type conversions. If you
       try to add a string to an object you'll get an error message and
       no result.
+
+      Please note that all numbers are converted to IEEE754 double precision
+      floating point representation. Arithmetic and logical operators are working
+      with these converted doubles. Results of all such operations are also limited
+      to the double precision.
+
+      The only exception to this behaviour of number is a snapshot of original number
+      literal. When a number which originally was provided as a literal is never
+      mutated until the end of the program then it is printed to the output in its
+      original literal form. This also includes cases when the original literal
+      would be truncated when converted to the IEEE754 double precision floating point
+      number.
 
     entries:
       - title: "Addition: `+`"
@@ -674,20 +810,20 @@ sections:
           value unchanged.
 
         examples:
-          - program: '.a + 1'
+          - program: ".a + 1"
             input: '{"a": 7}'
-            output: ['8']
-          - program: '.a + .b'
+            output: ["8"]
+          - program: ".a + .b"
             input: '{"a": [1,2], "b": [3,4]}'
-            output: ['[1,2,3,4]']
-          - program: '.a + null'
+            output: ["[1,2,3,4]"]
+          - program: ".a + null"
             input: '{"a": 1}'
-            output: ['1']
-          - program: '.a + 1'
-            input: '{}'
-            output: ['1']
-          - program: '{a: 1} + {b: 2} + {c: 3} + {a: 42}'
-            input: 'null'
+            output: ["1"]
+          - program: ".a + 1"
+            input: "{}"
+            output: ["1"]
+          - program: "{a: 1} + {b: 2} + {c: 3} + {a: 42}"
+            input: "null"
             output: ['{"a": 42, "b": 2, "c": 3}']
 
       - title: "Subtraction: `-`"
@@ -698,9 +834,9 @@ sections:
           the second array's elements from the first array.
 
         examples:
-          - program: '4 - .a'
+          - program: "4 - .a"
             input: '{"a":3}'
-            output: ['1']
+            output: ["1"]
           - program: . - ["xml", "yaml"]
             input: '["xml", "yaml", "json"]'
             output: ['["json"]']
@@ -712,7 +848,7 @@ sections:
           Division by zero raises an error. `x % y` computes x modulo y.
 
           Multiplying a string by a number produces the concatenation of
-          that string that many times. `"x" * 0` produces **null**.
+          that string that many times. `"x" * 0` produces `""`.
 
           Dividing a string by another splits the first using the second
           as separators.
@@ -723,19 +859,34 @@ sections:
           the same strategy.
 
         examples:
-          - program: '10 / . * 3'
-            input: '5'
-            output: ['6']
+          - program: "10 / . * 3"
+            input: "5"
+            output: ["6"]
           - program: '. / ", "'
             input: '"a, b,c,d, e"'
             output: ['["a","b,c,d","e"]']
           - program: '{"k": {"a": 1, "b": 2}} * {"k": {"a": 0,"c": 3}}'
-            input: 'null'
+            input: "null"
             output: ['{"k": {"a": 0, "b": 2, "c": 3}}']
-          - program: '.[] | (1 / .)?'
-            input: '[1,0,-1]'
-            output: ['1', '-1']
+          - program: ".[] | (1 / .)?"
+            input: "[1,0,-1]"
+            output: ["1", "-1"]
 
+      - title: "`abs`"
+        body: |
+
+          The builtin function `abs` is defined naively as: `if . < 0 then - . else . end`.
+
+          For numeric input, this is the absolute value.  See the
+          section on the identity filter for the implications of this
+          definition for numeric input.
+
+          To compute the absolute value of a number as a floating point number, you may wish use `fabs`.
+
+        examples:
+          - program: "map(abs)"
+            input: "[-10, -1.1, -1e-1]"
+            output: ["[10,1.1,1e-1]"]
 
       - title: "`length`"
         body: |
@@ -758,10 +909,9 @@ sections:
           - It is an error to use `length` on a **boolean**.
 
         examples:
-          - program: '.[] | length'
+          - program: ".[] | length"
             input: '[[1,2], "string", {"a":2}, null, -5]'
-            output: ['2', '6', '1', '0', '5']
-
+            output: ["2", "6", "1", "0", "5"]
 
       - title: "`utf8bytelength`"
         body: |
@@ -770,9 +920,9 @@ sections:
           bytes used to encode a string in UTF-8.
 
         examples:
-          - program: 'utf8bytelength'
+          - program: "utf8bytelength"
             input: '"\u03bc"'
-            output: ['2']
+            output: ["2"]
 
       - title: "`keys`, `keys_unsorted`"
         body: |
@@ -794,12 +944,12 @@ sections:
           instead the keys will roughly be in insertion order.
 
         examples:
-          - program: 'keys'
+          - program: "keys"
             input: '{"abc": 1, "abcd": 2, "Foo": 3}'
             output: ['["Foo", "abc", "abcd"]']
-          - program: 'keys'
-            input: '[42,3,35]'
-            output: ['[0,1,2]']
+          - program: "keys"
+            input: "[42,3,35]"
+            output: ["[0,1,2]"]
 
       - title: "`has(key)`"
         body: |
@@ -815,10 +965,10 @@ sections:
         examples:
           - program: 'map(has("foo"))'
             input: '[{"foo": 42}, {}]'
-            output: ['[true, false]']
-          - program: 'map(has(2))'
+            output: ["[true, false]"]
+          - program: "map(has(2))"
             input: '[[0,1], ["a","b","c"]]'
-            output: ['[false, true]']
+            output: ["[false, true]"]
 
       - title: "`in`"
         body: |
@@ -831,32 +981,90 @@ sections:
         examples:
           - program: '.[] | in({"foo": 42})'
             input: '["foo", "bar"]'
-            output: ['true', 'false']
-          - program: 'map(in([0,1]))'
-            input: '[2, 0]'
-            output: ['[false, true]']
+            output: ["true", "false"]
+          - program: "map(in([0,1]))"
+            input: "[2, 0]"
+            output: ["[false, true]"]
 
       - title: "`map(f)`, `map_values(f)`"
         body: |
 
-          For any filter `f`, `map(f)` will run that filter for each
-          element of the input array, and return the outputs in a new
-          array. `map(.+1)` will increment each element of an array of numbers.
+          For any filter `f`, `map(f)` and `map_values(f)` apply `f`
+          to each of the values in the input array or object, that is,
+          to the values of `.[]`.
 
-          Similarly, `map_values(f)` will run that filter for each element,
-          but it will return an object when an object is passed.
+          In the absence of errors, `map(f)` always outputs an array
+          whereas `map_values(f)` outputs an array if given an array,
+          or an object if given an object.
 
-          `map(f)` is equivalent to `[.[] | f]`. In fact, this is how
-          it's defined. Similarly, `map_values(f)` is defined as `.[] |= f`.
+          When the input to `map_values(f)` is an object, the output
+          object has the same keys as the input object except for
+          those keys whose values when piped to `f` produce no values
+          at all.
+
+          The key difference between `map(f)` and `map_values(f)` is
+          that the former simply forms an array from all the values of
+          `($x|f)` for each value, $x, in the input array or object,
+          but `map_values(f)` only uses `first($x|f)`.
+
+          Specifically, for object inputs, `map_value(f)` constructs
+          the output object by examining in turn the value of
+          `first(.[$k]|f)` for each key, $k, of the input.  If this
+          expression produces no values, then the corresponding key
+          will be dropped; otherwise, the output object will have that
+          value at the key, $k.
+
+          Here are some examples to clarify the behavior of `map` and
+          `map_values` when applied to arrays. These examples assume the
+          input is `[1]` in all cases:
+
+              map(.+1)          #=>  [2]
+              map(., .)         #=>  [1,1]
+              map(empty)        #=>  []
+
+              map_values(.+1)   #=>  [2]
+              map_values(., .)  #=>  [1]
+              map_values(empty) #=>  []
+
+          `map(f)` is equivalent to `[.[] | f]` and
+          `map_values(f)` is equivalent to `.[] |= f`.
+
+          In fact, these are their implementations.
 
         examples:
-          - program: 'map(.+1)'
-            input: '[1,2,3]'
-            output: ['[2,3,4]']
+          - program: "map(.+1)"
+            input: "[1,2,3]"
+            output: ["[2,3,4]"]
 
-          - program: 'map_values(.+1)'
+          - program: "map_values(.+1)"
             input: '{"a": 1, "b": 2, "c": 3}'
             output: ['{"a": 2, "b": 3, "c": 4}']
+
+          - program: "map(., .)"
+            input: "[1,2]"
+            output: ["[1,1,2,2]"]
+
+          - program: "map_values(. // empty)"
+            input: '{"a": null, "b": true, "c": false}'
+            output: ['{"b":true}']
+
+      - title: "`pick(pathexps)`"
+        body: |
+
+          Emit the projection of the input object or array defined by the
+          specified sequence of path expressions, such that if `p` is any
+          one of these specifications, then `(. | p)` will evaluate to the
+          same value as `(. | pick(pathexps) | p)`. For arrays, negative
+          indices and `.[m:n]` specifications should not be used.
+
+        examples:
+          - program: "pick(.a, .b.c, .x)"
+            input: '{"a": 1, "b": {"c": 2, "d": 3}, "e": 4}'
+            output: ['{"a":1,"b":{"c":2},"x":null}']
+
+          - program: "pick(.[2], .[0], .[0])"
+            input: "[1,2,3,4]"
+            output: ["[1,null,3]"]
 
       - title: "`path(path_expression)`"
         body: |
@@ -883,10 +1091,10 @@ sections:
           boolean values in `.`, and only those paths.
 
         examples:
-          - program: 'path(.a[0].b)'
-            input: 'null'
+          - program: "path(.a[0].b)"
+            input: "null"
             output: ['["a",0,"b"]']
-          - program: '[path(..)]'
+          - program: "[path(..)]"
             input: '{"a":[{"b":1}]}'
             output: ['[[],["a"],["a",0],["a",0,"b"]]']
 
@@ -897,10 +1105,10 @@ sections:
           value from an object.
 
         examples:
-          - program: 'del(.foo)'
+          - program: "del(.foo)"
             input: '{"foo": 42, "bar": 9001, "baz": 42}'
             output: ['{"bar": 9001, "baz": 42}']
-          - program: 'del(.[1, 2])'
+          - program: "del(.[1, 2])"
             input: '["foo", "bar", "baz"]'
             output: ['["foo"]']
 
@@ -912,11 +1120,11 @@ sections:
 
         examples:
           - program: 'getpath(["a","b"])'
-            input: 'null'
-            output: ['null']
+            input: "null"
+            output: ["null"]
           - program: '[getpath(["a","b"], ["a","c"])]'
             input: '{"a":{"b":0, "c":1}}'
-            output: ['[0, 1]']
+            output: ["[0, 1]"]
 
       - title: "`setpath(PATHS; VALUE)`"
         body: |
@@ -925,19 +1133,19 @@ sections:
 
         examples:
           - program: 'setpath(["a","b"]; 1)'
-            input: 'null'
+            input: "null"
             output: ['{"a": {"b": 1}}']
           - program: 'setpath(["a","b"]; 1)'
             input: '{"a":{"b":0}}'
             output: ['{"a": {"b": 1}}']
           - program: 'setpath([0,"a"]; 1)'
-            input: 'null'
+            input: "null"
             output: ['[{"a":1}]']
 
       - title: "`delpaths(PATHS)`"
         body: |
 
-          The builtin function `delpaths` sets the `PATHS` in `.`.
+          The builtin function `delpaths` deletes the `PATHS` in `.`.
           `PATHS` must be an array of paths, where each path is an array
           of strings and numbers.
 
@@ -961,16 +1169,15 @@ sections:
           `"value"`, and `"Value"` as keys.
 
         examples:
-          - program: 'to_entries'
+          - program: "to_entries"
             input: '{"a": 1, "b": 2}'
             output: ['[{"key":"a", "value":1}, {"key":"b", "value":2}]']
-          - program: 'from_entries'
+          - program: "from_entries"
             input: '[{"key":"a", "value":1}, {"key":"b", "value":2}]'
             output: ['{"a": 1, "b": 2}']
           - program: 'with_entries(.key |= "KEY_" + .)'
             input: '{"a": 1, "b": 2}'
             output: ['{"KEY_a": 1, "KEY_b": 2}']
-
 
       - title: "`select(boolean_expression)`"
         body: |
@@ -983,13 +1190,12 @@ sections:
           will give you `[2,3]`.
 
         examples:
-          - program: 'map(select(. >= 2))'
-            input: '[1,5,3,0,7]'
-            output: ['[5,3,7]']
+          - program: "map(select(. >= 2))"
+            input: "[1,5,3,0,7]"
+            output: ["[5,3,7]"]
           - program: '.[] | select(.id == "second")'
             input: '[{"id": "first", "val": 1}, {"id": "second", "val": 2}]'
             output: ['{"id": "second", "val": 2}']
-
 
       - title: "`arrays`, `objects`, `iterables`, `booleans`, `numbers`, `normals`, `finites`, `strings`, `nulls`, `values`, `scalars`"
         body: |
@@ -1000,9 +1206,9 @@ sections:
           non-iterables, respectively.
 
         examples:
-          - program: '.[]|numbers'
+          - program: ".[]|numbers"
             input: '[[],{},1,"foo",null,true,false]'
-            output: ['1']
+            output: ["1"]
 
       - title: "`empty`"
         body: |
@@ -1012,12 +1218,12 @@ sections:
           It's useful on occasion. You'll know if you need it :)
 
         examples:
-          - program: '1, empty, 2'
-            input: 'null'
-            output: ['1', '2']
-          - program: '[1,2,empty,3]'
-            input: 'null'
-            output: ['[1,2,3]']
+          - program: "1, empty, 2"
+            input: "null"
+            output: ["1", "2"]
+          - program: "[1,2,empty,3]"
+            input: "null"
+            output: ["[1,2,3]"]
 
       - title: "`error`, `error(message)`"
         body: |
@@ -1026,17 +1232,13 @@ sections:
           given as the argument. Errors can be caught with try/catch;
           see below.
 
-          When the error value is `null`, it produces nothing and works
-          just like `empty`. So `[null | error]` and `[error(null)]` both
-          emit `[]`.
-
         examples:
-          - program: 'try error catch .'
+          - program: "try error catch ."
             input: '"error message"'
             output: ['"error message"']
 
           - program: 'try error("invalid value: \(.)") catch .'
-            input: '42'
+            input: "42"
             output: ['"invalid value: 42"']
 
       - title: "`halt`"
@@ -1066,10 +1268,10 @@ sections:
 
         examples:
           - program: 'try error("\($__loc__)") catch .'
-            input: 'null'
+            input: "null"
             output: ['"{\"file\":\"<top-level>\",\"line\":1}"']
 
-      - title: "`paths`, `paths(node_filter)`, `leaf_paths`"
+      - title: "`paths`, `paths(node_filter)`"
         body: |
 
           `paths` outputs the paths to all the elements in its input
@@ -1080,11 +1282,8 @@ sections:
           That is, `paths(type == "number")` outputs the paths to all numeric
           values.
 
-          `leaf_paths` is an alias of `paths(scalars)`; `leaf_paths` is
-          *deprecated* and will be removed in the next major release.
-
         examples:
-          - program: '[paths]'
+          - program: "[paths]"
             input: '[1,[[],{"a":2}]]'
             output: ['[[0],[1],[1,0],[1,1],[1,1,"a"]]']
           - program: '[paths(type == "number")]'
@@ -1107,10 +1306,10 @@ sections:
             input: '["a","b","c"]'
             output: ['"abc"']
           - program: add
-            input: '[1, 2, 3]'
-            output: ['6']
+            input: "[1, 2, 3]"
+            output: ["6"]
           - program: add
-            input: '[]'
+            input: "[]"
             output: ["null"]
 
       - title: "`any`, `any(condition)`, `any(generator; condition)`"
@@ -1130,13 +1329,13 @@ sections:
 
         examples:
           - program: any
-            input: '[true, false]'
+            input: "[true, false]"
             output: ["true"]
           - program: any
-            input: '[false, false]'
+            input: "[false, false]"
             output: ["false"]
           - program: any
-            input: '[]'
+            input: "[]"
             output: ["false"]
 
       - title: "`all`, `all(condition)`, `all(generator; condition)`"
@@ -1156,13 +1355,13 @@ sections:
 
         examples:
           - program: all
-            input: '[true, false]'
+            input: "[true, false]"
             output: ["false"]
           - program: all
-            input: '[true, true]'
+            input: "[true, true]"
             output: ["true"]
           - program: all
-            input: '[]'
+            input: "[]"
             output: ["true"]
 
       - title: "`flatten`, `flatten(depth)`"
@@ -1178,13 +1377,13 @@ sections:
 
         examples:
           - program: flatten
-            input: '[1, [2], [[3]]]'
+            input: "[1, [2], [[3]]]"
             output: ["[1, 2, 3]"]
           - program: flatten(1)
-            input: '[1, [2], [[3]]]'
+            input: "[1, [2], [[3]]]"
             output: ["[1, 2, [3]]"]
           - program: flatten
-            input: '[[]]'
+            input: "[[]]"
             output: ["[]"]
           - program: flatten
             input: '[{"foo": "bar"}, [{"foo": "baz"}]]'
@@ -1208,24 +1407,24 @@ sections:
           with an increment of `by`.
 
         examples:
-          - program: 'range(2; 4)'
-            input: 'null'
-            output: ['2', '3']
-          - program: '[range(2; 4)]'
-            input: 'null'
-            output: ['[2,3]']
-          - program: '[range(4)]'
-            input: 'null'
-            output: ['[0,1,2,3]']
-          - program: '[range(0; 10; 3)]'
-            input: 'null'
-            output: ['[0,3,6,9]']
-          - program: '[range(0; 10; -1)]'
-            input: 'null'
-            output: ['[]']
-          - program: '[range(0; -5; -1)]'
-            input: 'null'
-            output: ['[0,-1,-2,-3,-4]']
+          - program: "range(2; 4)"
+            input: "null"
+            output: ["2", "3"]
+          - program: "[range(2; 4)]"
+            input: "null"
+            output: ["[2,3]"]
+          - program: "[range(4)]"
+            input: "null"
+            output: ["[0,1,2,3]"]
+          - program: "[range(0; 10; 3)]"
+            input: "null"
+            output: ["[0,3,6,9]"]
+          - program: "[range(0; 10; -1)]"
+            input: "null"
+            output: ["[]"]
+          - program: "[range(0; -5; -1)]"
+            input: "null"
+            output: ["[0,-1,-2,-3,-4]"]
 
       - title: "`floor`"
         body: |
@@ -1233,9 +1432,9 @@ sections:
           The `floor` function returns the floor of its numeric input.
 
         examples:
-          - program: 'floor'
-            input: '3.14159'
-            output: ['3']
+          - program: "floor"
+            input: "3.14159"
+            output: ["3"]
 
       - title: "`sqrt`"
         body: |
@@ -1243,9 +1442,9 @@ sections:
           The `sqrt` function returns the square root of its numeric input.
 
         examples:
-          - program: 'sqrt'
-            input: '9'
-            output: ['3']
+          - program: "sqrt"
+            input: "9"
+            output: ["3"]
 
       - title: "`tonumber`"
         body: |
@@ -1255,9 +1454,9 @@ sections:
           equivalent, leave numbers alone, and give an error on all other input.
 
         examples:
-          - program: '.[] | tonumber'
+          - program: ".[] | tonumber"
             input: '[1, "1"]'
-            output: ['1', '1']
+            output: ["1", "1"]
 
       - title: "`tostring`"
         body: |
@@ -1267,7 +1466,7 @@ sections:
           JSON-encoded.
 
         examples:
-          - program: '.[] | tostring'
+          - program: ".[] | tostring"
             input: '[1, "1", [1]]'
             output: ['"1"', '"1"', '"[1]"']
 
@@ -1279,9 +1478,10 @@ sections:
           or object.
 
         examples:
-          - program: 'map(type)'
+          - program: "map(type)"
             input: '[0, false, [], {}, null, "hello"]'
-            output: ['["number", "boolean", "array", "object", "null", "string"]']
+            output:
+              ['["number", "boolean", "array", "object", "null", "string"]']
 
       - title: "`infinite`, `nan`, `isinfinite`, `isnan`, `isfinite`, `isnormal`"
         body: |
@@ -1300,11 +1500,11 @@ sections:
           NaNs, and sub-normals do not raise errors.
 
         examples:
-          - program: '.[] | (infinite * .) < 0'
-            input: '[-1, 1]'
-            output: ['true', 'false']
-          - program: 'infinite, nan | type'
-            input: 'null'
+          - program: ".[] | (infinite * .) < 0"
+            input: "[-1, 1]"
+            output: ["true", "false"]
+          - program: "infinite, nan | type"
+            input: "null"
             output: ['"number"', '"number"']
 
       - title: "`sort`, `sort_by(path_expression)`"
@@ -1334,17 +1534,21 @@ sections:
           equal, and so on.
 
         examples:
-          - program: 'sort'
-            input: '[8,3,null,6]'
-            output: ['[null,3,6,8]']
+          - program: "sort"
+            input: "[8,3,null,6]"
+            output: ["[null,3,6,8]"]
 
-          - program: 'sort_by(.foo)'
+          - program: "sort_by(.foo)"
             input: '[{"foo":4, "bar":10}, {"foo":3, "bar":10}, {"foo":2, "bar":1}]'
-            output: ['[{"foo":2, "bar":1}, {"foo":3, "bar":10}, {"foo":4, "bar":10}]']
+            output:
+              ['[{"foo":2, "bar":1}, {"foo":3, "bar":10}, {"foo":4, "bar":10}]']
 
-          - program: 'sort_by(.foo, .bar)'
+          - program: "sort_by(.foo, .bar)"
             input: '[{"foo":4, "bar":10}, {"foo":3, "bar":20}, {"foo":2, "bar":1}, {"foo":3, "bar":10}]'
-            output: ['[{"foo":2, "bar":1}, {"foo":3, "bar":10}, {"foo":3, "bar":20}, {"foo":4, "bar":10}]']
+            output:
+              [
+                '[{"foo":2, "bar":1}, {"foo":3, "bar":10}, {"foo":3, "bar":20}, {"foo":4, "bar":10}]',
+              ]
 
       - title: "`group_by(path_expression)`"
         body: |
@@ -1359,9 +1563,12 @@ sections:
           in the `sort` function above.
 
         examples:
-          - program: 'group_by(.foo)'
+          - program: "group_by(.foo)"
             input: '[{"foo":1, "bar":10}, {"foo":3, "bar":100}, {"foo":1, "bar":1}]'
-            output: ['[[{"foo":1, "bar":10}, {"foo":1, "bar":1}], [{"foo":3, "bar":100}]]']
+            output:
+              [
+                '[[{"foo":1, "bar":10}, {"foo":1, "bar":1}], [{"foo":3, "bar":100}]]',
+              ]
 
       - title: "`min`, `max`, `min_by(path_exp)`, `max_by(path_exp)`"
         body: |
@@ -1373,10 +1580,10 @@ sections:
           `min_by(.foo)` finds the object with the smallest `foo` field.
 
         examples:
-          - program: 'min'
-            input: '[5,4,2,7]'
-            output: ['2']
-          - program: 'max_by(.foo)'
+          - program: "min"
+            input: "[5,4,2,7]"
+            output: ["2"]
+          - program: "max_by(.foo)"
             input: '[{"foo":1, "bar":14}, {"foo":2, "bar":3}]'
             output: ['{"foo":2, "bar":3}']
 
@@ -1393,13 +1600,13 @@ sections:
           produced by `group`.
 
         examples:
-          - program: 'unique'
-            input: '[1,2,5,3,5,3,1,3]'
-            output: ['[1,2,3,5]']
-          - program: 'unique_by(.foo)'
+          - program: "unique"
+            input: "[1,2,5,3,5,3,1,3]"
+            output: ["[1,2,3,5]"]
+          - program: "unique_by(.foo)"
             input: '[{"foo": 1, "bar": 2}, {"foo": 1, "bar": 3}, {"foo": 4, "bar": 5}]'
             output: ['[{"foo": 1, "bar": 2}, {"foo": 4, "bar": 5}]']
-          - program: 'unique_by(length)'
+          - program: "unique_by(length)"
             input: '["chunky", "bacon", "kitten", "cicada", "asparagus"]'
             output: ['["bacon", "chunky", "asparagus"]']
 
@@ -1409,9 +1616,9 @@ sections:
           This function reverses an array.
 
         examples:
-          - program: 'reverse'
-            input: '[1,2,3,4]'
-            output: ['[4,3,2,1]']
+          - program: "reverse"
+            input: "[1,2,3,4]"
+            output: ["[4,3,2,1]"]
 
       - title: "`contains(element)`"
         body: |
@@ -1428,19 +1635,19 @@ sections:
         examples:
           - program: 'contains("bar")'
             input: '"foobar"'
-            output: ['true']
+            output: ["true"]
           - program: 'contains(["baz", "bar"])'
             input: '["foobar", "foobaz", "blarp"]'
-            output: ['true']
+            output: ["true"]
           - program: 'contains(["bazzzzz", "bar"])'
             input: '["foobar", "foobaz", "blarp"]'
-            output: ['false']
-          - program: 'contains({foo: 12, bar: [{barp: 12}]})'
+            output: ["false"]
+          - program: "contains({foo: 12, bar: [{barp: 12}]})"
             input: '{"foo": 12, "bar":[1,2,{"barp":12, "blip":13}]}'
-            output: ['true']
-          - program: 'contains({foo: 12, bar: [{barp: 15}]})'
+            output: ["true"]
+          - program: "contains({foo: 12, bar: [{barp: 15}]})"
             input: '{"foo": 12, "bar":[1,2,{"barp":12, "blip":13}]}'
-            output: ['false']
+            output: ["false"]
 
       - title: "`indices(s)`"
         body: |
@@ -1453,13 +1660,13 @@ sections:
         examples:
           - program: 'indices(", ")'
             input: '"a,b, cd, efg, hijk"'
-            output: ['[3,7,12]']
-          - program: 'indices(1)'
-            input: '[0,1,2,1,3,1,4]'
-            output: ['[1,3,5]']
-          - program: 'indices([1,2])'
-            input: '[0,1,2,3,1,4,2,5,1,2,6,7]'
-            output: ['[1,8]']
+            output: ["[3,7,12]"]
+          - program: "indices(1)"
+            input: "[0,1,2,1,3,1,4]"
+            output: ["[1,3,5]"]
+          - program: "indices([1,2])"
+            input: "[0,1,2,3,1,4,2,5,1,2,6,7]"
+            output: ["[1,8]"]
 
       - title: "`index(s)`, `rindex(s)`"
         body: |
@@ -1470,22 +1677,22 @@ sections:
         examples:
           - program: 'index(", ")'
             input: '"a,b, cd, efg, hijk"'
-            output: ['3']
-          - program: 'index(1)'
-            input: '[0,1,2,1,3,1,4]'
-            output: ['1']
-          - program: 'index([1,2])'
-            input: '[0,1,2,3,1,4,2,5,1,2,6,7]'
-            output: ['1']
+            output: ["3"]
+          - program: "index(1)"
+            input: "[0,1,2,1,3,1,4]"
+            output: ["1"]
+          - program: "index([1,2])"
+            input: "[0,1,2,3,1,4,2,5,1,2,6,7]"
+            output: ["1"]
           - program: 'rindex(", ")'
             input: '"a,b, cd, efg, hijk"'
-            output: ['12']
-          - program: 'rindex(1)'
-            input: '[0,1,2,1,3,1,4]'
-            output: ['5']
-          - program: 'rindex([1,2])'
-            input: '[0,1,2,3,1,4,2,5,1,2,6,7]'
-            output: ['8']
+            output: ["12"]
+          - program: "rindex(1)"
+            input: "[0,1,2,1,3,1,4]"
+            output: ["5"]
+          - program: "rindex([1,2])"
+            input: "[0,1,2,3,1,4,2,5,1,2,6,7]"
+            output: ["8"]
 
       - title: "`inside`"
         body: |
@@ -1497,19 +1704,19 @@ sections:
         examples:
           - program: 'inside("foobar")'
             input: '"bar"'
-            output: ['true']
+            output: ["true"]
           - program: 'inside(["foobar", "foobaz", "blarp"])'
             input: '["baz", "bar"]'
-            output: ['true']
+            output: ["true"]
           - program: 'inside(["foobar", "foobaz", "blarp"])'
             input: '["bazzzzz", "bar"]'
-            output: ['false']
+            output: ["false"]
           - program: 'inside({"foo": 12, "bar":[1,2,{"barp":12, "blip":13}]})'
             input: '{"foo": 12, "bar": [{"barp": 12}]}'
-            output: ['true']
+            output: ["true"]
           - program: 'inside({"foo": 12, "bar":[1,2,{"barp":12, "blip":13}]})'
             input: '{"foo": 12, "bar": [{"barp": 15}]}'
-            output: ['false']
+            output: ["false"]
 
       - title: "`startswith(str)`"
         body: |
@@ -1519,7 +1726,7 @@ sections:
         examples:
           - program: '[.[]|startswith("foo")]'
             input: '["fo", "foo", "barfoo", "foobar", "barfoob"]'
-            output: ['[false, true, false, true, false]']
+            output: ["[false, true, false, true, false]"]
 
       - title: "`endswith(str)`"
         body: |
@@ -1529,7 +1736,7 @@ sections:
         examples:
           - program: '[.[]|endswith("foo")]'
             input: '["foobar", "barfoo"]'
-            output: ['[false, true]']
+            output: ["[false, true]"]
 
       - title: "`combinations`, `combinations(n)`"
         body: |
@@ -1539,12 +1746,12 @@ sections:
           of `n` repetitions of the input array.
 
         examples:
-          - program: 'combinations'
-            input: '[[1,2], [3, 4]]'
-            output: ['[1, 3]', '[1, 4]', '[2, 3]', '[2, 4]']
-          - program: 'combinations(2)'
-            input: '[0, 1]'
-            output: ['[0, 0]', '[0, 1]', '[1, 0]', '[1, 1]']
+          - program: "combinations"
+            input: "[[1,2], [3, 4]]"
+            output: ["[1, 3]", "[1, 4]", "[2, 3]", "[2, 4]"]
+          - program: "combinations(2)"
+            input: "[0, 1]"
+            output: ["[0, 0]", "[0, 1]", "[1, 0]", "[1, 1]"]
 
       - title: "`ltrimstr(str)`"
         body: |
@@ -1575,9 +1782,9 @@ sections:
           codepoint numbers.
 
         examples:
-          - program: 'explode'
+          - program: "explode"
             input: '"foobar"'
-            output: ['[102,111,111,98,97,114]']
+            output: ["[102,111,111,98,97,114]"]
 
       - title: "`implode`"
         body: |
@@ -1585,14 +1792,17 @@ sections:
           The inverse of explode.
 
         examples:
-          - program: 'implode'
-            input: '[65, 66, 67]'
+          - program: "implode"
+            input: "[65, 66, 67]"
             output: ['"ABC"']
 
       - title: "`split(str)`"
         body: |
 
           Splits an input string on the separator argument.
+
+          `split` can also split on regex matches when called with
+          two arguments (see the regular expressions section below).
 
         examples:
           - program: 'split(", ")'
@@ -1626,7 +1836,7 @@ sections:
           converted to the specified case.
 
         examples:
-          - program: 'ascii_upcase'
+          - program: "ascii_upcase"
             input: '"useful but not for é"'
             output: ['"USEFUL BUT NOT FOR é"']
 
@@ -1642,9 +1852,25 @@ sections:
           output for each input.  See advanced topics below.
 
         examples:
-          - program: '[while(.<100; .*2)]'
-            input: '1'
-            output: ['[1,2,4,8,16,32,64]']
+          - program: "[while(.<100; .*2)]"
+            input: "1"
+            output: ["[1,2,4,8,16,32,64]"]
+
+      - title: "`repeat(exp)`"
+        body: |
+
+          The `repeat(exp)` function allows you to repeatedly
+          apply expression `exp` to `.` until an error is raised.
+
+          Note that `repeat(exp)` is internally defined as a
+          recursive jq function.  Recursive calls within `repeat` will
+          not consume additional memory if `exp` produces at most one
+          output for each input.  See advanced topics below.
+
+        examples:
+          - program: "[repeat(.*2, error)?]"
+            input: "1"
+            output: ["[2]"]
 
       - title: "`until(cond; next)`"
         body: |
@@ -1660,12 +1886,11 @@ sections:
           output for each input.  See advanced topics below.
 
         examples:
-          - program: '[.,1]|until(.[0] < 1; [.[0] - 1, .[1] * .[0]])|.[1]'
-            input: '4'
-            output: ['24']
+          - program: "[.,1]|until(.[0] < 1; [.[0] - 1, .[1] * .[0]])|.[1]"
+            input: "4"
+            output: ["24"]
 
-
-      - title: "`recurse(f)`, `recurse`, `recurse(f; condition)`, `recurse_down`"
+      - title: "`recurse(f)`, `recurse`, `recurse(f; condition)`"
         body: |
 
           The `recurse(f)` function allows you to search through a
@@ -1699,16 +1924,12 @@ sections:
           to generate all the integers, at least in principle, one
           could write `recurse(.+1; true)`.
 
-          For legacy reasons, `recurse_down` exists as an alias to
-          calling `recurse` without arguments. This alias is considered
-          *deprecated* and will be removed in the next major release.
-
           The recursive calls in `recurse` will not consume additional
           memory whenever `f` produces at most a single output for each
           input.
 
         examples:
-          - program: 'recurse(.foo[])'
+          - program: "recurse(.foo[])"
             input: '{"foo":[{"foo": []}, {"foo":[{"foo":[]}]}]}'
             output:
               - '{"foo":[{"foo":[]},{"foo":[{"foo":[]}]}]}'
@@ -1716,17 +1937,17 @@ sections:
               - '{"foo":[{"foo":[]}]}'
               - '{"foo":[]}'
 
-          - program: 'recurse'
+          - program: "recurse"
             input: '{"a":0,"b":[1]}'
             output:
               - '{"a":0,"b":[1]}'
-              - '0'
-              - '[1]'
-              - '1'
+              - "0"
+              - "[1]"
+              - "1"
 
-          - program: 'recurse(. * .; . < 20)'
-            input: '2'
-            output: ['2', '4', '16']
+          - program: "recurse(. * .; . < 20)"
+            input: "2"
+            output: ["2", "4", "16"]
 
       - title: "`walk(f)`"
         body: |
@@ -1745,14 +1966,27 @@ sections:
 
         examples:
           - program: 'walk(if type == "array" then sort else . end)'
-            input: '[[4, 1, 7], [8, 5, 2], [3, 6, 9]]'
+            input: "[[4, 1, 7], [8, 5, 2], [3, 6, 9]]"
             output:
-              - '[[1,4,7],[2,5,8],[3,6,9]]'
+              - "[[1,4,7],[2,5,8],[3,6,9]]"
 
           - program: 'walk( if type == "object" then with_entries( .key |= sub( "^_+"; "") ) else . end )'
             input: '[ { "_a": { "__b": 2 } } ]'
             output:
               - '[{"a":{"b":2}}]'
+
+      - title: "`$JQ_BUILD_CONFIGURATION`"
+        body: |
+
+          This builtin binding shows the jq executable's build
+          configuration.  Its value has no particular format, but
+          it can be expected to be at least the `./configure`
+          command-line arguments, and may be enriched in the
+          future to include the version strings for the build
+          tooling used.
+
+          Note that this can be overriden in the command-line
+          with `--arg` and related options.
 
       - title: "`$ENV`, `env`"
         body: |
@@ -1766,12 +2000,12 @@ sections:
           variables.
 
         examples:
-          - program: '$ENV.PAGER'
-            input: 'null'
+          - program: "$ENV.PAGER"
+            input: "null"
             output: ['"less"']
 
-          - program: 'env.PAGER'
-            input: 'null'
+          - program: "env.PAGER"
+            input: "null"
             output: ['"less"']
 
       - title: "`transpose`"
@@ -1781,9 +2015,9 @@ sections:
           Rows are padded with nulls so the result is always rectangular.
 
         examples:
-          - program: 'transpose'
-            input: '[[1], [2,3]]'
-            output: ['[[1,2],[null,3]]']
+          - program: "transpose"
+            input: "[[1], [2,3]]"
+            output: ["[[1,2],[null,3]]"]
 
       - title: "`bsearch(x)`"
         body: |
@@ -1798,15 +2032,15 @@ sections:
           interest.
 
         examples:
-          - program: 'bsearch(0)'
-            input: '[0,1]'
-            output: ['0']
-          - program: 'bsearch(0)'
-            input: '[1,2,3]'
-            output: ['-1']
-          - program: 'bsearch(4) as $ix | if $ix < 0 then .[-(1+$ix)] = 4 else . end'
-            input: '[1,2,3]'
-            output: ['[1,2,3,4]']
+          - program: "bsearch(0)"
+            input: "[0,1]"
+            output: ["0"]
+          - program: "bsearch(0)"
+            input: "[1,2,3]"
+            output: ["-1"]
+          - program: "bsearch(4) as $ix | if $ix < 0 then .[-(1+$ix)] = 4 else . end"
+            input: "[1,2,3]"
+            output: ["[1,2,3,4]"]
 
       - title: "String interpolation: `\\(exp)`"
         body: |
@@ -1817,7 +2051,7 @@ sections:
 
         examples:
           - program: '"The input was \(.), which is one less than \(.+1)"'
-            input: '42'
+            input: "42"
             output: ['"The input was 42, which is one less than 43"']
 
       - title: "Convert to/from JSON"
@@ -1829,13 +2063,13 @@ sections:
           unmodified, while `tojson` encodes strings as JSON strings.
 
         examples:
-          - program: '[.[]|tostring]'
+          - program: "[.[]|tostring]"
             input: '[1, "foo", ["foo"]]'
             output: ['["1","foo","[\"foo\"]"]']
-          - program: '[.[]|tojson]'
+          - program: "[.[]|tojson]"
             input: '[1, "foo", ["foo"]]'
             output: ['["1","\"foo\"","[\"foo\"]"]']
-          - program: '[.[]|tojson|fromjson]'
+          - program: "[.[]|tojson|fromjson]"
             input: '[1, "foo", ["foo"]]'
             output: ['[1,"foo",["foo"]]']
 
@@ -1914,19 +2148,19 @@ sections:
           not escaped, as they were part of the string literal.
 
         examples:
-          - program: '@html'
+          - program: "@html"
             input: '"This works if x < y"'
             output: ['"This works if x &lt; y"']
 
           - program: '@sh "echo \(.)"'
-            input: "\"O'Hara's Ale\""
+            input: '"O''Hara''s Ale"'
             output: ["\"echo 'O'\\\\''Hara'\\\\''s Ale'\""]
 
-          - program: '@base64'
+          - program: "@base64"
             input: '"This is a message"'
             output: ['"VGhpcyBpcyBhIG1lc3NhZ2U="']
 
-          - program: '@base64d'
+          - program: "@base64d"
             input: '"VGhpcyBpcyBhIG1lc3NhZ2U="'
             output: ['"This is a message"']
 
@@ -1993,17 +2227,17 @@ sections:
           `strptime(fmt)` are not supported on macOS.
 
         examples:
-          - program: 'fromdate'
+          - program: "fromdate"
             input: '"2015-03-05T23:51:47Z"'
-            output: ['1425599507']
+            output: ["1425599507"]
 
           - program: 'strptime("%Y-%m-%dT%H:%M:%SZ")'
             input: '"2015-03-05T23:51:47Z"'
-            output: ['[2015,2,5,23,51,47,4,63]']
+            output: ["[2015,2,5,23,51,47,4,63]"]
 
           - program: 'strptime("%Y-%m-%dT%H:%M:%SZ")|mktime'
             input: '"2015-03-05T23:51:47Z"'
-            output: ['1425599507']
+            output: ["1425599507"]
 
       - title: "SQL-Style Operators"
         body: |
@@ -2058,19 +2292,27 @@ sections:
       - title: "`==`, `!=`"
         body: |
 
-          The expression 'a == b' will produce 'true' if the result of a and b
-          are equal (that is, if they represent equivalent JSON documents) and
+          The expression 'a == b' will produce 'true' if the results of evaluating
+          a and b are equal (that is, if they represent equivalent JSON values) and
           'false' otherwise. In particular, strings are never considered equal
-          to numbers. If you're coming from JavaScript, jq's == is like
-          JavaScript's === - considering values equal only when they have the
-          same type as well as the same value.
+          to numbers.  In checking for the equality of JSON objects, the ordering of keys
+          is irrelevant.  If you're coming from JavaScript, please note that jq's `==` is like
+          JavaScript's `===`, the "strict equality" operator.
 
           != is "not equal", and 'a != b' returns the opposite value of 'a == b'
 
         examples:
-          - program: '.[] == 1'
+          - program: ". == false"
+            input: "null"
+            output: ["false"]
+
+          - program: '. == {"b": {"d": (4 + 1e-20), "c": 3}, "a":1}'
+            input: '{"a":1, "b": {"c": 3, "d": 4}}'
+            output: ["true"]
+
+          - program: ".[] == 1"
             input: '[1, 1.0, "1", "banana"]'
-            output: ['true', 'true', 'false', 'false']
+            output: ["true", "true", "false", "false"]
 
       - title: if-then-else-end
         body: |
@@ -2079,12 +2321,16 @@ sections:
           produces a value other than false or null, but act the same
           as `C` otherwise.
 
+          `if A then B end` is the same as `if A then B else .  end`.
+          That is, the `else` branch is optional, and if absent is the
+          same as `.`. This also applies to `elif` with absent ending `else` branch.
+
           Checking for false or null is a simpler notion of
           "truthiness" than is found in JavaScript or Python, but it
           means that you'll sometimes have to be more explicit about
           the condition you want.  You can't test whether, e.g. a
-          string is empty using `if .name then A else B end`, you'll
-          need something more like `if .name == "" then A else B end` instead.
+          string is empty using `if .name then A else B end`; you'll
+          need something like `if .name == "" then A else B end` instead.
 
           If the condition `A` produces multiple results, then `B` is evaluated
           once for each result that is not false or null, and `C` is evaluated
@@ -2101,7 +2347,7 @@ sections:
               else
                 "many"
               end
-            input: '2'
+            input: "2"
             output: ['"many"']
 
       - title: "`>`, `>=`, `<=`, `<`"
@@ -2115,17 +2361,17 @@ sections:
           The ordering is the same as that described for `sort`, above.
 
         examples:
-          - program: '. < 5'
-            input: '2'
-            output: ['true']
+          - program: ". < 5"
+            input: "2"
+            output: ["true"]
 
       - title: "`and`, `or`, `not`"
         body: |
 
-          jq supports the normal Boolean operators `and`, `or`, `not`. They
-          have the same standard of truth as if expressions - `false` and
-          `null` are considered "false values", and anything else is a "true
-          value".
+          jq supports the normal Boolean operators `and`, `or`, `not`.
+          They have the same standard of truth as if expressions -
+          `false` and `null` are considered "false values", and
+          anything else is a "true value".
 
           If an operand of one of these operators produces multiple
           results, the operator itself will produce a result for each input.
@@ -2144,24 +2390,31 @@ sections:
 
         examples:
           - program: '42 and "a string"'
-            input: 'null'
-            output: ['true']
-          - program: '(true, false) or false'
-            input: 'null'
-            output: ['true', 'false']
-          - program: '(true, true) and (true, false)'
-            input: 'null'
-            output: ['true', 'false', 'true', 'false']
-          - program: '[true, false | not]'
-            input: 'null'
-            output: ['[false, true]']
+            input: "null"
+            output: ["true"]
+          - program: "(true, false) or false"
+            input: "null"
+            output: ["true", "false"]
+          - program: "(true, true) and (true, false)"
+            input: "null"
+            output: ["true", "false", "true", "false"]
+          - program: "[true, false | not]"
+            input: "null"
+            output: ["[false, true]"]
 
       - title: "Alternative operator: `//`"
         body: |
 
-          A filter of the form `a // b` produces the same
-          results as `a`, if `a` produces results other than `false`
-          and `null`. Otherwise, `a // b` produces the same results as `b`.
+          The `//` operator produces all the values of its left-hand
+          side that are neither `false` nor `null`, or, if the
+          left-hand side produces no values other than `false` or
+          `null`, then `//` produces all the values of its right-hand
+          side.
+
+          A filter of the form `a // b` produces all the results of
+          `a` that are not `false` or `null`.  If `a` produces no
+          results, or no results other than `false` or `null`, then `a
+          // b` produces the results of `b`.
 
           This is useful for providing defaults: `.foo // 1` will
           evaluate to `1` if there's no `.foo` element in the
@@ -2169,13 +2422,36 @@ sections:
           (jq's `or` operator is reserved for strictly Boolean
           operations).
 
+          Note: `some_generator // defaults_here` is not the same
+          as `some_generator | . // defaults_here`.  The latter will
+          produce default values for all non-`false`, non-`null`
+          values of the left-hand side, while the former will not.
+          Precedence rules can make this confusing.  For example, in
+          `false, 1 // 2` the left-hand side of `//` is `1`, not
+          `false, 1` -- `false, 1 // 2` parses the same way as `false,
+          (1 // 2)`.  In `(false, null, 1) | . // 42` the left-hand
+          side of `//` is `.`, which always produces just one value,
+          while in `(false, null, 1) // 42` the left-hand side is a
+          generator of three values, and since it produces a
+          value other `false` and `null`, the default `42` is not
+          produced.
+
         examples:
-          - program: '.foo // 42'
+          - program: "empty // 42"
+            input: "null"
+            output: ["42"]
+          - program: ".foo // 42"
             input: '{"foo": 19}'
-            output: ['19']
-          - program: '.foo // 42'
-            input: '{}'
-            output: ['42']
+            output: ["19"]
+          - program: ".foo // 42"
+            input: "{}"
+            output: ["42"]
+          - program: "(false, null, 1) // 42"
+            input: "null"
+            output: ["1"]
+          - program: "(false, null, 1) | . // 42"
+            input: "null"
+            output: ["42", "42", "1"]
 
       - title: try-catch
         body: |
@@ -2190,13 +2466,13 @@ sections:
 
         examples:
           - program: 'try .a catch ". is not an object"'
-            input: 'true'
+            input: "true"
             output: ['". is not an object"']
-          - program: '[.[]|try .a]'
+          - program: "[.[]|try .a]"
             input: '[{}, true, {"a":1}]'
-            output: ['[null, 1]']
+            output: ["[null, 1]"]
           - program: 'try error("some exception") catch .'
-            input: 'true'
+            input: "true"
             output: ['"some exception"']
 
       - title: Breaking out of control structures
@@ -2239,19 +2515,23 @@ sections:
           The `?` operator, used as `EXP?`, is shorthand for `try EXP`.
 
         examples:
-          - program: '[.[] | .a?]'
+          - program: "[.[] | .a?]"
             input: '[{}, true, {"a":1}]'
-            output: ['[null, 1]']
-          - program: '[.[] | tonumber?]'
+            output: ["[null, 1]"]
+          - program: "[.[] | tonumber?]"
             input: '["1", "invalid", "3", 4]'
-            output: ['[1, 3, 4]']
+            output: ["[1, 3, 4]"]
 
   - title: Regular expressions
     body: |
 
-      jq uses the Oniguruma regular expression library, as do PHP,
-      Ruby, TextMate, Sublime Text, etc, so the description here
-      will focus on jq specifics.
+      jq uses the
+      [Oniguruma regular expression library](https://github.com/kkos/oniguruma/blob/master/doc/RE),
+      as do PHP, TextMate, Sublime Text, etc, so the
+      description here will focus on jq specifics.
+
+      Oniguruma supports several flavors of regular expression, so it is important to know
+      that jq uses the ["Perl NG" (Perl with named groups)](https://github.com/kkos/oniguruma/blob/master/doc/SYNTAX.md) flavor.
 
       The jq regex filters are defined so that they can be used using
       one of these patterns:
@@ -2266,6 +2546,10 @@ sections:
       * STRING, REGEX, and FLAGS are jq strings and subject to jq string interpolation;
       * REGEX, after string interpolation, should be a valid regular expression;
       * FILTER is one of `test`, `match`, or `capture`, as described below.
+
+      Since REGEX must evaluate to a JSON string, some characters that are needed
+      to form a regular expression must be escaped. For example, the regular expression
+      `\s` signifying a whitespace character would be written as `"\\s"`.
 
       FLAGS is a string consisting of one of more of the supported flags:
 
@@ -2298,10 +2582,10 @@ sections:
         examples:
           - program: 'test("foo")'
             input: '"foo"'
-            output: ['true']
+            output: ["true"]
           - program: '.[] | test("a b c # spaces are ignored"; "ix")'
             input: '["xabcd", "ABC"]'
-            output: ['true', 'true']
+            output: ["true", "true"]
 
       - title: "`match(val)`, `match(regex; flags)`"
         body: |
@@ -2327,33 +2611,33 @@ sections:
           - program: 'match("(abc)+"; "g")'
             input: '"abc abc"'
             output:
-             - '{"offset": 0, "length": 3, "string": "abc", "captures": [{"offset": 0, "length": 3, "string": "abc", "name": null}]}'
-             - '{"offset": 4, "length": 3, "string": "abc", "captures": [{"offset": 4, "length": 3, "string": "abc", "name": null}]}'
+              - '{"offset": 0, "length": 3, "string": "abc", "captures": [{"offset": 0, "length": 3, "string": "abc", "name": null}]}'
+              - '{"offset": 4, "length": 3, "string": "abc", "captures": [{"offset": 4, "length": 3, "string": "abc", "name": null}]}'
           - program: 'match("foo")'
             input: '"foo bar foo"'
-            output: ['{"offset": 0, "length": 3, "string": "foo", "captures": []}']
+            output:
+              ['{"offset": 0, "length": 3, "string": "foo", "captures": []}']
           - program: 'match(["foo", "ig"])'
             input: '"foo bar FOO"'
             output:
-             - '{"offset": 0, "length": 3, "string": "foo", "captures": []}'
-             - '{"offset": 8, "length": 3, "string": "FOO", "captures": []}'
+              - '{"offset": 0, "length": 3, "string": "foo", "captures": []}'
+              - '{"offset": 8, "length": 3, "string": "FOO", "captures": []}'
           - program: 'match("foo (?<bar123>bar)? foo"; "ig")'
             input: '"foo bar foo foo  foo"'
             output:
-             - '{"offset": 0, "length": 11, "string": "foo bar foo", "captures": [{"offset": 4, "length": 3, "string": "bar", "name": "bar123"}]}'
-             - '{"offset": 12, "length": 8, "string": "foo  foo", "captures": [{"offset": -1, "length": 0, "string": null, "name": "bar123"}]}'
+              - '{"offset": 0, "length": 11, "string": "foo bar foo", "captures": [{"offset": 4, "length": 3, "string": "bar", "name": "bar123"}]}'
+              - '{"offset": 12, "length": 8, "string": "foo  foo", "captures": [{"offset": -1, "length": 0, "string": null, "name": "bar123"}]}'
 
           - program: '[ match("."; "g")] | length'
             input: '"abc"'
-            output: ['3']
-
+            output: ["3"]
 
       - title: "`capture(val)`, `capture(regex; flags)`"
         body: |
 
-         Collects the named captures in a JSON object, with the name
-         of each capture as the key, and the matched string as the
-         corresponding value.
+          Collects the named captures in a JSON object, with the name
+          of each capture as the key, and the matched string as the
+          corresponding value.
 
         examples:
           - program: 'capture("(?<a>[a-z]+)-(?<n>[0-9]+)")'
@@ -2377,13 +2661,15 @@ sections:
       - title: "`split(regex; flags)`"
         body: |
 
-          For backwards compatibility, `split` splits on a string, not a regex.
+          Splits an input string on each regex match.
+
+          For backwards compatibility, when called with a single argument,
+          `split` splits on a string, not a regex.
 
         examples:
           - program: 'split(", *"; null)'
             input: '"ab,cd, ef"'
             output: ['["ab","cd","ef"]']
-
 
       - title: "`splits(regex)`, `splits(regex; flags)`"
         body: |
@@ -2394,35 +2680,44 @@ sections:
         examples:
           - program: 'splits(", *")'
             input: '"ab,cd,   ef, gh"'
-            output: ['"ab"','"cd"','"ef"','"gh"']
+            output: ['"ab"', '"cd"', '"ef"', '"gh"']
 
-      - title: "`sub(regex; tostring)`, `sub(regex; string; flags)`"
+      - title: "`sub(regex; tostring)`, `sub(regex; tostring; flags)`"
         body: |
 
-          Emit the string obtained by replacing the first match of regex in the
-          input string with `tostring`, after interpolation.  `tostring` should
-          be a jq string, and may contain references to named captures. The
-          named captures are, in effect, presented as a JSON object (as
-          constructed by `capture`) to `tostring`, so a reference to a captured
-          variable named "x" would take the form: `"\(.x)"`.
+          Emit the string obtained by replacing the first match of
+          regex in the input string with `tostring`, after
+          interpolation.  `tostring` should be a jq string or a stream
+          of such strings, each of which may contain references to
+          named captures. The named captures are, in effect, presented
+          as a JSON object (as constructed by `capture`) to
+          `tostring`, so a reference to a captured variable named "x"
+          would take the form: `"\(.x)"`.
 
         examples:
           - program: 'sub("[^a-z]*(?<x>[a-z]+)"; "Z\(.x)"; "g")'
             input: '"123abc456def"'
             output: ['"ZabcZdef"']
 
+          - program: '[sub("(?<a>.)"; "\(.a|ascii_upcase)", "\(.a|ascii_downcase)")]'
+            input: '"aB"'
+            output: ['["AB","aB"]']
 
-      - title: "`gsub(regex; string)`, `gsub(regex; string; flags)`"
+      - title: "`gsub(regex; tostring)`, `gsub(regex; tostring; flags)`"
         body: |
 
           `gsub` is like `sub` but all the non-overlapping occurrences of the regex are
-          replaced by the string, after interpolation.
+          replaced by `tostring`, after interpolation. If the second argument is a stream
+          of jq strings, then `gsub` will produce a corresponding stream of JSON strings.
 
         examples:
           - program: 'gsub("(?<x>.)[^a]*"; "+\(.x)-")'
             input: '"Abcabc"'
             output: ['"+A-+a-"']
 
+          - program: '[gsub("p"; "a", "b")]'
+            input: '"p"'
+            output: ['["a","b"]']
 
   - title: Advanced features
     body: |
@@ -2542,20 +2837,20 @@ sections:
           will not be visible where the old one was.
 
         examples:
-          - program: '.bar as $x | .foo | . + $x'
+          - program: ".bar as $x | .foo | . + $x"
             input: '{"foo":10, "bar":200}'
-            output: ['210']
-          - program: '. as $i|[(.*2|. as $i| $i), $i]'
-            input: '5'
-            output: ['[10,5]']
-          - program: '. as [$a, $b, {c: $c}] | $a + $b + $c'
+            output: ["210"]
+          - program: ". as $i|[(.*2|. as $i| $i), $i]"
+            input: "5"
+            output: ["[10,5]"]
+          - program: ". as [$a, $b, {c: $c}] | $a + $b + $c"
             input: '[2, 3, {"c": 4, "d": 5}]'
-            output: ['9']
-          - program: '.[] as [$a, $b] | {a: $a, b: $b}'
-            input: '[[0], [0, 1], [2, 1, 0]]'
+            output: ["9"]
+          - program: ".[] as [$a, $b] | {a: $a, b: $b}"
+            input: "[[0], [0, 1], [2, 1, 0]]"
             output: ['{"a":0,"b":null}', '{"a":0,"b":1}', '{"a":2,"b":1}']
 
-      - title: 'Destructuring Alternative Operator: `?//`'
+      - title: "Destructuring Alternative Operator: `?//`"
         body: |
 
           The destructuring alternative operator provides a concise mechanism
@@ -2591,17 +2886,18 @@ sections:
               [[3]] | .[] as [$a] ?// [$b] | if $a != null then error("err: \($a)") else {$a,$b} end
 
         examples:
-          - program: '.[] as {$a, $b, c: {$d, $e}} ?// {$a, $b, c: [{$d, $e}]} | {$a, $b, $d, $e}'
+          - program: ".[] as {$a, $b, c: {$d, $e}} ?// {$a, $b, c: [{$d, $e}]} | {$a, $b, $d, $e}"
             input: '[{"a": 1, "b": 2, "c": {"d": 3, "e": 4}}, {"a": 1, "b": 2, "c": [{"d": 3, "e": 4}]}]'
             output: ['{"a":1,"b":2,"d":3,"e":4}', '{"a":1,"b":2,"d":3,"e":4}']
-          - program: '.[] as {$a, $b, c: {$d}} ?// {$a, $b, c: [{$e}]} | {$a, $b, $d, $e}'
+          - program: ".[] as {$a, $b, c: {$d}} ?// {$a, $b, c: [{$e}]} | {$a, $b, $d, $e}"
             input: '[{"a": 1, "b": 2, "c": {"d": 3, "e": 4}}, {"a": 1, "b": 2, "c": [{"d": 3, "e": 4}]}]'
-            output: ['{"a":1,"b":2,"d":3,"e":null}', '{"a":1,"b":2,"d":null,"e":4}']
+            output:
+              ['{"a":1,"b":2,"d":3,"e":null}', '{"a":1,"b":2,"d":null,"e":4}']
           - program: '.[] as [$a] ?// [$b] | if $a != null then error("err: \($a)") else {$a,$b} end'
-            input: '[[3]]'
+            input: "[[3]]"
             output: ['{"a":null,"b":3}']
 
-      - title: 'Defining Functions'
+      - title: "Defining Functions"
         body: |
 
           You can give a filter a name using "def" syntax:
@@ -2652,14 +2948,14 @@ sections:
           See also the section below on scoping.
 
         examples:
-          - program: 'def addvalue(f): . + [f]; map(addvalue(.[0]))'
-            input: '[[1,2],[10,20]]'
-            output: ['[[1,2,1], [10,20,10]]']
-          - program: 'def addvalue(f): f as $x | map(. + $x); addvalue(.[0])'
-            input: '[[1,2],[10,20]]'
-            output: ['[[1,2,1,2], [10,20,1,2]]']
+          - program: "def addvalue(f): . + [f]; map(addvalue(.[0]))"
+            input: "[[1,2],[10,20]]"
+            output: ["[[1,2,1], [10,20,10]]"]
+          - program: "def addvalue(f): f as $x | map(. + $x); addvalue(.[0])"
+            input: "[[1,2],[10,20]]"
+            output: ["[[1,2,1,2], [10,20,1,2]]"]
 
-      - title: 'Scoping'
+      - title: "Scoping"
         body: |
 
           There are two types of symbols in jq: value bindings (a.k.a.,
@@ -2682,17 +2978,17 @@ sections:
           Returns true if `exp` produces no outputs, false otherwise.
 
         examples:
-          - program: 'isempty(empty)'
-            input: 'null'
-            output: ['true']
+          - program: "isempty(empty)"
+            input: "null"
+            output: ["true"]
 
-          - program: 'isempty(.[])'
-            input: '[]'
-            output: ['true']
+          - program: "isempty(.[])"
+            input: "[]"
+            output: ["true"]
 
-          - program: 'isempty(.[])'
-            input: '[1,2,3]'
-            output: ['false']
+          - program: "isempty(.[])"
+            input: "[1,2,3]"
+            output: ["false"]
 
       - title: "`limit(n; exp)`"
         body: |
@@ -2700,9 +2996,9 @@ sections:
           The `limit` function extracts up to `n` outputs from `exp`.
 
         examples:
-          - program: '[limit(3;.[])]'
-            input: '[0,1,2,3,4,5,6,7,8,9]'
-            output: ['[0,1,2]']
+          - program: "[limit(3;.[])]"
+            input: "[0,1,2,3,4,5,6,7,8,9]"
+            output: ["[0,1,2]"]
 
       - title: "`first(expr)`, `last(expr)`, `nth(n; expr)`"
         body: |
@@ -2710,15 +3006,13 @@ sections:
           The `first(expr)` and `last(expr)` functions extract the first
           and last values from `expr`, respectively.
 
-          The `nth(n; expr)` function extracts the nth value output by
-          `expr`.  This can be defined as `def nth(n; expr):
-          last(limit(n + 1; expr));`.  Note that `nth(n; expr)` doesn't
-          support negative values of `n`.
+          The `nth(n; expr)` function extracts the nth value output by `expr`.
+          Note that `nth(n; expr)` doesn't support negative values of `n`.
 
         examples:
-          - program: '[first(range(.)), last(range(.)), nth(./2; range(.))]'
-            input: '10'
-            output: ['[0,9,5]']
+          - program: "[first(range(.)), last(range(.)), nth(./2; range(.))]"
+            input: "10"
+            output: ["[0,9,5]"]
 
       - title: "`first`, `last`, `nth(n)`"
         body: |
@@ -2729,9 +3023,9 @@ sections:
           The `nth(n)` function extracts the nth value of any array at `.`.
 
         examples:
-          - program: '[range(.)]|[first, last, nth(5)]'
-            input: '10'
-            output: ['[0,9,5]']
+          - program: "[range(.)]|[first, last, nth(5)]"
+            input: "10"
+            output: ["[0,9,5]"]
 
       - title: "`reduce`"
         body: |
@@ -2753,15 +3047,15 @@ sections:
                   3 as $item | . + $item
 
         examples:
-          - program: 'reduce .[] as $item (0; . + $item)'
-            input: '[1,2,3,4,5]'
-            output: ['15']
+          - program: "reduce .[] as $item (0; . + $item)"
+            input: "[1,2,3,4,5]"
+            output: ["15"]
 
-          - program: 'reduce .[] as [$i,$j] (0; . + $i * $j)'
-            input: '[[1,2],[3,4],[5,6]]'
-            output: ['44']
+          - program: "reduce .[] as [$i,$j] (0; . + $i * $j)"
+            input: "[[1,2],[3,4],[5,6]]"
+            output: ["44"]
 
-          - program: 'reduce .[] as {$x,$y} (null; .x += $x | .y += [$y])'
+          - program: "reduce .[] as {$x,$y} (null; .x += $x | .y += [$y])"
             input: '[{"x":"a","y":1},{"x":"b","y":2},{"x":"c","y":3}]'
             output: ['{"x":"abc","y":[1,2,3]}']
 
@@ -2792,15 +3086,15 @@ sections:
           That is, it outputs the intermediate values as they are.
 
         examples:
-          - program: 'foreach .[] as $item (0; . + $item)'
-            input: '[1,2,3,4,5]'
-            output: ['1','3','6','10','15']
+          - program: "foreach .[] as $item (0; . + $item)"
+            input: "[1,2,3,4,5]"
+            output: ["1", "3", "6", "10", "15"]
 
-          - program: 'foreach .[] as $item (0; . + $item; [$item, . * 2])'
-            input: '[1,2,3,4,5]'
-            output: ['[1,2]','[2,6]','[3,12]','[4,20]','[5,30]']
+          - program: "foreach .[] as $item (0; . + $item; [$item, . * 2])"
+            input: "[1,2,3,4,5]"
+            output: ["[1,2]", "[2,6]", "[3,12]", "[4,20]", "[5,30]"]
 
-          - program: 'foreach .[] as $item (0; . + 1; {index: ., $item})'
+          - program: "foreach .[] as $item (0; . + 1; {index: ., $item})"
             input: '["foo", "bar", "baz"]'
             output:
               - '{"index":1,"item":"foo"}'
@@ -2836,52 +3130,52 @@ sections:
       - title: Generators and iterators
         body: |
 
-            Some jq operators and functions are actually generators in
-            that they can produce zero, one, or more values for each
-            input, just as one might expect in other programming
-            languages that have generators.  For example, `.[]`
-            generates all the values in its input (which must be an
-            array or an object), `range(0; 10)` generates the integers
-            between 0 and 10, and so on.
+          Some jq operators and functions are actually generators in
+          that they can produce zero, one, or more values for each
+          input, just as one might expect in other programming
+          languages that have generators.  For example, `.[]`
+          generates all the values in its input (which must be an
+          array or an object), `range(0; 10)` generates the integers
+          between 0 and 10, and so on.
 
-            Even the comma operator is a generator, generating first the
-            values generated by the expression to the left of the comma,
-            then for each of those, the values generate by the
-            expression on the right of the comma.
+          Even the comma operator is a generator, generating first
+          the values generated by the expression to the left of the
+          comma, then the values generated by the expression on the
+          right of the comma.
 
-            The `empty` builtin is the generator that produces zero
-            outputs.  The `empty` builtin backtracks to the preceding
-            generator expression.
+          The `empty` builtin is the generator that produces zero
+          outputs.  The `empty` builtin backtracks to the preceding
+          generator expression.
 
-            All jq functions can be generators just by using builtin
-            generators.  It is also possible to define new generators
-            using only recursion and the comma operator.  If the
-            recursive call(s) is(are) "in tail position" then the
-            generator will be efficient.  In the example below the
-            recursive call by `_range` to itself is in tail position.
-            The example shows off three advanced topics: tail recursion,
-            generator construction, and sub-functions.
+          All jq functions can be generators just by using builtin
+          generators.  It is also possible to construct new generators
+          using only recursion and the comma operator.  If
+          recursive calls are "in tail position" then the
+          generator will be efficient.  In the example below the
+          recursive call by `_range` to itself is in tail position.
+          The example shows off three advanced topics: tail recursion,
+          generator construction, and sub-functions.
 
         examples:
-          - program: 'def range(init; upto; by):
-                    def _range:
-                        if (by > 0 and . < upto) or (by < 0 and . > upto)
-                        then ., ((.+by)|_range)
-                        else . end;
-                    if by == 0 then init else init|_range end |
-                    select((by > 0 and . < upto) or (by < 0 and . > upto));
-                range(0; 10; 3)'
-            input: 'null'
-            output: ['0', '3', '6', '9']
-          - program: 'def while(cond; update):
-                    def _while:
-                        if cond then ., (update | _while) else empty end;
-                    _while;
-                [while(.<100; .*2)]'
-            input: '1'
-            output: ['[1,2,4,8,16,32,64]']
+          - program: "def range(init; upto; by):
+              def _range:
+              if (by > 0 and . < upto) or (by < 0 and . > upto)
+              then ., ((.+by)|_range)
+              else . end;
+              if by == 0 then init else init|_range end |
+              select((by > 0 and . < upto) or (by < 0 and . > upto));
+              range(0; 10; 3)"
+            input: "null"
+            output: ["0", "3", "6", "9"]
+          - program: "def while(cond; update):
+              def _while:
+              if cond then ., (update | _while) else empty end;
+              _while;
+              [while(.<100; .*2)]"
+            input: "1"
+            output: ["[1,2,4,8,16,32,64]"]
 
-  - title: 'Math'
+  - title: "Math"
     body: |
 
       jq currently only has IEEE754 double-precision (64-bit) floating
@@ -2916,7 +3210,7 @@ sections:
 
       See your system's manual for more information on each of these.
 
-  - title: 'I/O'
+  - title: "I/O"
     body: |
 
       At this time jq has minimal support for I/O, mostly in the
@@ -2924,11 +3218,13 @@ sections:
       are provided for this, `input` and `inputs`, that read from the
       same sources (e.g., `stdin`, files named on the command-line) as
       jq itself.  These two builtins, and jq's own reading actions, can
-      be interleaved with each other.
+      be interleaved with each other.  They are commonly used in combination
+      with the null input option `-n` to prevent one input from being read
+      implicitly.
 
       Two builtins provide minimal output capabilities, `debug`, and
       `stderr`.  (Recall that a jq program's output values are always
-      output as JSON texts on `stdout`.)  The `debug` builtin can have
+      output as JSON texts on `stdout`.) The `debug` builtin can have
       application-specific behavior, such as for executables that use
       the libjq C API but aren't the jq executable itself.  The `stderr`
       builtin outputs its input in raw mode to stder with no additional
@@ -2944,6 +3240,10 @@ sections:
 
           Outputs one new input.
 
+          Note that when using `input` it is generally be necessary to
+          invoke jq with the `-n` command-line option, otherwise
+          the first entity will be lost.
+
               echo 1 2 3 4 | jq '[., input]' # [1,2] [3,4]
 
       - title: "`inputs`"
@@ -2952,17 +3252,38 @@ sections:
           Outputs all remaining inputs, one by one.
 
           This is primarily useful for reductions over a program's
-          inputs.
+          inputs.  Note that when using `inputs` it is generally necessary
+          to invoke jq with the `-n` command-line option, otherwise
+          the first entity will be lost.
 
               echo 1 2 3 | jq -n 'reduce inputs as $i (0; . + $i)' # 6
 
-      - title: "`debug`"
+      - title: "`debug`, `debug(msgs)`"
         body: |
 
-          Causes a debug message based on the input value to be
-          produced.  The jq executable wraps the input value with
-          `["DEBUG:", <input-value>]` and prints that and a newline on
-          stderr, compactly.  This may change in the future.
+          These two filters are like `.` but have as a side-effect the
+          production of one or more messages on stderr.
+
+          The message produced by the `debug` filter has the form
+
+              ["DEBUG:",<input-value>]
+
+          where `<input-value>` is a compact rendition of the input
+          value.  This format may change in the future.
+
+          The `debug(msgs)` filter is defined as `(msgs | debug | empty), .`
+          thus allowing great flexibility in the content of the message,
+          while also allowing multi-line debugging statements to be created.
+
+          For example, the expression:
+
+              1 as $x | 2 | debug("Entering function foo with $x == \($x)", .) | (.+1)
+
+          would produce the value 3 but with the following two lines
+          being written to stderr:
+
+              ["DEBUG:","Entering function foo with $x == 1"]
+              ["DEBUG:",2]
 
       - title: "`stderr`"
         body: |
@@ -2982,7 +3303,7 @@ sections:
 
           Returns the line number of the input currently being filtered.
 
-  - title: 'Streaming'
+  - title: "Streaming"
     body: |
 
       With the `--stream` option jq can parse input texts in a streaming
@@ -3014,9 +3335,9 @@ sections:
           given streaming expression.
 
         examples:
-          - program: 'truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]])'
-            input: '1'
-            output: ['[[0],2]', '[[0]]']
+          - program: "truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]])"
+            input: "1"
+            output: ["[[0],2]", "[[0]]"]
 
       - title: "`fromstream(stream_expression)`"
         body: |
@@ -3025,9 +3346,9 @@ sections:
           outputs.
 
         examples:
-          - program: 'fromstream(1|truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]]))'
-            input: 'null'
-            output: ['[2]']
+          - program: "fromstream(1|truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]]))"
+            input: "null"
+            output: ["[2]"]
 
       - title: "`tostream`"
         body: |
@@ -3035,9 +3356,9 @@ sections:
           The `tostream` builtin outputs the streamed form of its input.
 
         examples:
-          - program: '. as $dot|fromstream($dot|tostream)|.==$dot'
+          - program: ". as $dot|fromstream($dot|tostream)|.==$dot"
             input: '[0,[1,{"a":1},{"b":2}]]'
-            output: ['true']
+            output: ["true"]
 
   - title: Assignment
     body: |
@@ -3092,8 +3413,8 @@ sections:
           right-hand side and works out the new value for the property
           of `.` being assigned to by running the old value through this
           expression. For instance, `(.foo, .bar) |= .+1` will build an
-          object with the "foo" field set to the input's "foo" plus 1,
-          and the "bar" field set to the input's "bar" plus 1.
+          object with the `foo` field set to the input's `foo` plus 1,
+          and the `bar` field set to the input's `bar` plus 1.
 
           The left-hand side can be any general path expression; see `path()`.
 
@@ -3111,8 +3432,8 @@ sections:
 
         examples:
           - program: '(..|select(type=="boolean")) |= if . then 1 else 0 end'
-            input: '[true,false,[5,true,[true,[false]],false]]'
-            output: ['[1,0,[5,1,[1,[0]],0]]']
+            input: "[true,false,[5,true,[true,[false]],false]]"
+            output: ["[1,0,[5,1,[1,[0]],0]]"]
 
       - title: "Arithmetic update-assignment: `+=`, `-=`, `*=`, `/=`, `%=`, `//=`"
         body: |
@@ -3130,41 +3451,52 @@ sections:
         body: |
 
           This is the plain assignment operator.  Unlike the others, the
-          input to the right-hand-side (RHS) is the same as the input to
-          the left-hand-side (LHS) rather than the value at the LHS
+          input to the right-hand side (RHS) is the same as the input to
+          the left-hand side (LHS) rather than the value at the LHS
           path, and all values output by the RHS will be used (as shown
           below).
 
-          If the RHS of '=' produces multiple values, then for each such
+          If the RHS of `=` produces multiple values, then for each such
           value jq will set the paths on the left-hand side to the value
           and then it will output the modified `.`.  For example,
-          `(.a,.b)=range(2)` outputs `{"a":0,"b":0}`, then
+          `(.a,.b) = range(2)` outputs `{"a":0,"b":0}`, then
           `{"a":1,"b":1}`.  The "update" assignment forms (see above) do
           not do this.
 
-          This example should show the difference between '=' and '|=':
+          This example should show the difference between `=` and `|=`:
 
-          Provide input `{"a": {"b": 10}, "b": 20}` to the programs:
+          Provide input `{"a": {"b": 10}, "b": 20}` to the programs
 
-          `.a = .b`
+              .a = .b
 
-          `.a |= .b`
+          and
 
-          The former will set the "a" field of the input to the "b"
+              .a |= .b
+
+          The former will set the `a` field of the input to the `b`
           field of the input, and produce the output `{"a": 20, "b": 20}`.
-          The latter will set the "a" field of the input to the "a"
-          field's "b" field, producing `{"a": 10, "b": 20}`.
+          The latter will set the `a` field of the input to the `a`
+          field's `b` field, producing `{"a": 10, "b": 20}`.
 
-          Another example of the difference between `=` and `|=`:
+        examples:
+          - program: .a = .b
+            input: '{"a": {"b": 10}, "b": 20}'
+            output: ['{"a":20,"b":20}']
 
-          `null|(.a,.b)=range(3)`
+          - program: .a |= .b
+            input: '{"a": {"b": 10}, "b": 20}'
+            output: ['{"a":10,"b":20}']
 
-          outputs `{"a":0,"b":0}, {"a":1,"b":1}, {"a":2,"b":2}`,
-          while
+          - program: (.a, .b) = range(3)
+            input: "null"
+            output:
+              - '{"a":0,"b":0}'
+              - '{"a":1,"b":1}'
+              - '{"a":2,"b":2}'
 
-          `null|(.a,.b)|=range(3)`
-
-          outputs just `{"a":0,"b":0}`.
+          - program: (.a, .b) |= range(3)
+            input: "null"
+            output: ['{"a":0,"b":0}']
 
       - title: Complex assignments
         body: |
@@ -3218,14 +3550,14 @@ sections:
 
       Paths in the a search path are subject to various substitutions.
 
-      For paths starting with "~/", the user's home directory is
-      substituted for "~".
+      For paths starting with `~/`, the user's home directory is
+      substituted for `~`.
 
-      For paths starting with "$ORIGIN/", the directory where the jq
-      executable is located is substituted for "$ORIGIN".
+      For paths starting with `$ORIGIN/`, the directory where the jq
+      executable is located is substituted for `$ORIGIN`.
 
-      For paths starting with "./" or paths that are ".", the path of
-      the including file is substituted for ".".  For top-level programs
+      For paths starting with `./` or paths that are `.`, the path of
+      the including file is substituted for `.`.  For top-level programs
       given on the command-line, the current directory is used.
 
       Import directives can optionally specify a search path to which
@@ -3238,36 +3570,36 @@ sections:
       Null and empty string path elements terminate search path
       processing.
 
-      A dependency with relative path "foo/bar" would be searched for in
-      "foo/bar.jq" and "foo/bar/bar.jq" in the given search path. This
+      A dependency with relative path `foo/bar` would be searched for in
+      `foo/bar.jq` and `foo/bar/bar.jq` in the given search path. This
       is intended to allow modules to be placed in a directory along
       with, for example, version control files, README files, and so on,
       but also to allow for single-file modules.
 
       Consecutive components with the same name are not allowed to avoid
-      ambiguities (e.g., "foo/foo").
+      ambiguities (e.g., `foo/foo`).
 
       For example, with `-L$HOME/.jq` a module `foo` can be found in
       `$HOME/.jq/foo.jq` and `$HOME/.jq/foo/foo.jq`.
 
-      If "$HOME/.jq" is a file, it is sourced into the main program.
+      If `$HOME/.jq` is a file, it is sourced into the main program.
 
     entries:
       - title: "`import RelativePathString as NAME [<metadata>];`"
         body: |
 
           Imports a module found at the given path relative to a
-          directory in a search path.  A ".jq" suffix will be added to
+          directory in a search path.  A `.jq` suffix will be added to
           the relative path string.  The module's symbols are prefixed
-          with "NAME::".
+          with `NAME::`.
 
           The optional metadata must be a constant jq expression.  It
-          should be an object with keys like "homepage" and so on.  At
-          this time jq only uses the "search" key/value of the metadata.
+          should be an object with keys like `homepage` and so on.  At
+          this time jq only uses the `search` key/value of the metadata.
           The metadata is also made available to users via the
           `modulemeta` builtin.
 
-          The "search" key in the metadata, if present, should have a
+          The `search` key in the metadata, if present, should have a
           string or array value (array of strings); this is the search
           path to be prefixed to the top-level search path.
 
@@ -3276,13 +3608,13 @@ sections:
 
           Imports a module found at the given path relative to a
           directory in a search path as if it were included in place.  A
-          ".jq" suffix will be added to the relative path string.  The
+          `.jq` suffix will be added to the relative path string.  The
           module's symbols are imported into the caller's namespace as
           if the module's content had been included directly.
 
           The optional metadata must be a constant jq expression.  It
-          should be an object with keys like "homepage" and so on.  At
-          this time jq only uses the "search" key/value of the metadata.
+          should be an object with keys like `homepage` and so on.  At
+          this time jq only uses the `search` key/value of the metadata.
           The metadata is also made available to users via the
           `modulemeta` builtin.
 
@@ -3290,17 +3622,17 @@ sections:
         body: |
 
           Imports a JSON file found at the given path relative to a
-          directory in a search path.  A ".json" suffix will be added to
+          directory in a search path.  A `.json` suffix will be added to
           the relative path string.  The file's data will be available
           as `$NAME::NAME`.
 
           The optional metadata must be a constant jq expression.  It
-          should be an object with keys like "homepage" and so on.  At
-          this time jq only uses the "search" key/value of the metadata.
+          should be an object with keys like `homepage` and so on.  At
+          this time jq only uses the `search` key/value of the metadata.
           The metadata is also made available to users via the
           `modulemeta` builtin.
 
-          The "search" key in the metadata, if present, should have a
+          The `search` key in the metadata, if present, should have a
           string or array value (array of strings); this is the search
           path to be prefixed to the top-level search path.
 
@@ -3312,7 +3644,7 @@ sections:
           metadata that can be read with the `modulemeta` builtin.
 
           The metadata must be a constant jq expression.  It should be
-          an object with keys like "homepage".  At this time jq doesn't
+          an object with keys like `homepage`.  At this time jq doesn't
           use this metadata, but it is made available to users via the
           `modulemeta` builtin.
 
@@ -3321,7 +3653,8 @@ sections:
 
           Takes a module name as input and outputs the module's metadata
           as an object, with the module's imports (including metadata)
-          as an array value for the "deps" key.
+          as an array value for the `deps` key and the module's defined
+          functions as an array value for the `defs` key.
 
           Programs can use this to query a module's metadata, which they
           could then use to, for example, search for, download, and
@@ -3341,9 +3674,10 @@ sections:
         - color for strings
         - color for arrays
         - color for objects
+        - color for object keys
 
       The default color scheme is the same as setting
-      `"JQ_COLORS=1;30:0;39:0;39:0;39:0;32:1;39:1;39"`.
+      `JQ_COLORS="0;90:0;37:0;37:0;37:0;32:1;37:1;37:1;34"`.
 
       This is not a manual for VT100/ANSI escapes.  However, each of
       these color specifications should consist of two numbers separated

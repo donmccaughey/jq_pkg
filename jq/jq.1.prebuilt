@@ -1,5 +1,5 @@
 .
-.TH "JQ" "1" "August 2023" "" ""
+.TH "JQ" "1" "December 2023" "" ""
 .
 .SH "NAME"
 \fBjq\fR \- Command\-line JSON processor
@@ -250,7 +250,7 @@ Output the jq help and exit with zero\.
 \fB\-\-\fR:
 .
 .IP
-Terminates argument processing\. Remaining arguments are positional, either strings, JSON texts, or input filenames, according to whether \fB\-\-args\fR or \fB\-\-jsonargs\fR were given\.
+Terminates argument processing\. Remaining arguments are not interpreted as options\.
 .
 .TP
 \fB\-\-run\-tests [filename]\fR:
@@ -1066,7 +1066,7 @@ jq \'pick(\.a, \.b\.c, \.x)\'
    {"a": 1, "b": {"c": 2, "d": 3}, "e": 4}
 => {"a":1,"b":{"c":2},"x":null}
 
-jq \'[1,2,3,4] | pick(\.[2], \.[0], \.[0])\'
+jq \'pick(\.[2], \.[0], \.[0])\'
    [1,2,3,4]
 => [1,null,3]
 .
@@ -2586,7 +2586,7 @@ jq \'[true, false | not]\'
 .IP "" 0
 .
 .SS "Alternative operator: //"
-The \fB//\fR operator produces all the values of its left\-hand side that are neither \fBfalse\fR nor \fBnull\fR, or, if the left\-hand side produces no values other than \fBfalse\fR or \fBnull\fR, then \fB//\fR produces all the values of its right\-hand side\.
+The \fB//\fR operator produces all the values of its left\-hand side that are neither \fBfalse\fR nor \fBnull\fR\. If the left\-hand side produces no values other than \fBfalse\fR or \fBnull\fR, then \fB//\fR produces all the values of its right\-hand side\.
 .
 .P
 A filter of the form \fBa // b\fR produces all the results of \fBa\fR that are not \fBfalse\fR or \fBnull\fR\. If \fBa\fR produces no results, or no results other than \fBfalse\fR or \fBnull\fR, then \fBa // b\fR produces the results of \fBb\fR\.
@@ -2738,10 +2738,12 @@ jq \'[\.[] | tonumber?]\'
 .IP "" 0
 .
 .SH "REGULAR EXPRESSIONS"
-jq uses the 
+jq uses the Oniguruma regular expression library, as do PHP, TextMate, Sublime Text, etc, so the description here will focus on jq specifics\.
+
 .
 .P
-Oniguruma supports several flavors of regular expression, so it is important to know that jq uses the 
+Oniguruma supports several flavors of regular expression, so it is important to know that jq uses the "Perl NG" (Perl with named groups) flavor\.
+
 .
 .P
 The jq regex filters are defined so that they can be used using one of these patterns:
@@ -4058,7 +4060,7 @@ color for object keys
 .IP "" 0
 .
 .P
-The default color scheme is the same as setting \fBJQ_COLORS="0;90:0;37:0;37:0;37:0;32:1;37:1;37:1;34"\fR\.
+The default color scheme is the same as setting \fBJQ_COLORS="0;90:0;39:0;39:0;39:0;32:1;39:1;39:1;34"\fR\.
 .
 .P
 This is not a manual for VT100/ANSI escapes\. However, each of these color specifications should consist of two numbers separated by a semi\-colon, where the first number is one of these:

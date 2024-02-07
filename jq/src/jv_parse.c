@@ -493,7 +493,7 @@ static pfunc found_string(struct jv_parser* p) {
         return "Invalid escape";
       }
     } else {
-      if (c > 0 && c < 0x001f)
+      if (c >= 0 && c <= 0x001f)
         return "Invalid string: control characters from U+0000 through U+001F must be escaped";
       *out++ = c;
     }
@@ -514,7 +514,7 @@ static pfunc check_literal(struct jv_parser* p) {
   case 'f': pattern = "false"; plen = 5; v = jv_false(); break;
   case 'n':
     // if it starts with 'n', it could be a literal "nan"
-    if (p->tokenpos != 3) {
+    if (p->tokenbuf[1] == 'u') {
       pattern = "null"; plen = 4; v = jv_null();
     }
   }
@@ -859,9 +859,9 @@ jv jv_parser_next(struct jv_parser* p) {
   }
 }
 
-jv jv_parse_sized(const char* string, int length) {
+jv jv_parse_sized_custom_flags(const char* string, int length, int flags) {
   struct jv_parser parser;
-  parser_init(&parser, 0);
+  parser_init(&parser, flags);
   jv_parser_set_buf(&parser, string, length, 0);
   jv value = jv_parser_next(&parser);
   if (jv_is_valid(value)) {
@@ -898,6 +898,14 @@ jv jv_parse_sized(const char* string, int length) {
   return value;
 }
 
+jv jv_parse_sized(const char* string, int length) {
+  return jv_parse_sized_custom_flags(string, length, 0);
+}
+
 jv jv_parse(const char* string) {
   return jv_parse_sized(string, strlen(string));
+}
+
+jv jv_parse_custom_flags(const char* string, int flags) {
+  return jv_parse_sized_custom_flags(string, strlen(string), flags);
 }

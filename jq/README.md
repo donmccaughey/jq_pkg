@@ -1,6 +1,6 @@
 # jq
 
-`jq` is a lightweight and flexible command-line JSON processor akin to`sed`,`awk`,`grep`, and friends for JSON data. It's written in portable C and has zero runtime dependencies, allowing you to easily slice, filter, map, and transform structured data.
+`jq` is a lightweight and flexible command-line JSON processor akin to `sed`,`awk`,`grep`, and friends for JSON data. It's written in portable C and has zero runtime dependencies, allowing you to easily slice, filter, map, and transform structured data.
 
 ## Documentation
 
@@ -47,7 +47,7 @@ If you're not using the latest git version but instead building a released tarba
 
 ##### Cross-Compilation
 
-For details on cross-compliation, check out the [GitHub Actions file](.github/workflows/ci.yml) and the [cross-compliation wiki page](https://github.com/jqlang/jq/wiki/Cross-compilation).
+For details on cross-compilation, check out the [GitHub Actions file](.github/workflows/ci.yml) and the [cross-compilation wiki page](https://github.com/jqlang/jq/wiki/Cross-compilation).
 
 ## Community & Support
 

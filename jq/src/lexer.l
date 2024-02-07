@@ -37,7 +37,7 @@ struct lexer_param;
 
 %%
 
-"#"[^\r\n]* { /* comments */ }
+"#"[^\n]* { /* comments */ }
 
 "!=" { return NEQ; }
 "==" { return EQ; }
