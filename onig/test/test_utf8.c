@@ -1,6 +1,6 @@
 /*
  * test_utf8.c
- * Copyright (c) 2019-2022  K.Kosako
+ * Copyright (c) 2019-2024  K.Kosako
  */
 #ifdef ONIG_ESCAPE_UCHAR_COLLISION
 #undef ONIG_ESCAPE_UCHAR_COLLISION
@@ -64,7 +64,7 @@ static void xx(char* pattern, char* str, int from, int to, int mem, int not,
   r = onig_search(reg, (UChar* )str, (UChar* )(str + SLEN(str)),
                   (UChar* )str, (UChar* )(str + SLEN(str)),
                   region, ONIG_OPTION_NONE);
-  if (r < ONIG_MISMATCH) {
+  if (r < ONIG_MISMATCH || error_no < ONIG_MISMATCH) {
     char s[ONIG_MAX_ERROR_MESSAGE_LEN];
 
     if (error_no == 0) {
@@ -752,7 +752,7 @@ extern int main(int argc, char* argv[])
   n("\\A(a|b\\g<1>c)\\k<1+3>\\z", "bbaccb");
   x2("(?i)\\A(a|b\\g<1>c)\\k<1+2>\\z", "bBACcbac", 0, 8);
   x2("(?i)(?<X>aa)|(?<X>bb)\\k<X>", "BBbb", 0, 4);
-  x2("(?:\\k'+1'B|(A)C)*", "ACAB", 0, 4); // relative backref by postitive number
+  x2("(?:\\k'+1'B|(A)C)*", "ACAB", 0, 4); // relative backref by positive number
   x2("\\g<+2>(abc)(ABC){0}", "ABCabc", 0, 6); // relative call by positive number
   x2("A\\g'0'|B()", "AAAAB", 0, 5);
   x3("(A\\g'0')|B", "AAAAB", 0, 5, 1);
@@ -1481,6 +1481,15 @@ extern int main(int argc, char* argv[])
   n("(\\k<2>)|(?<=(\\k<1>))", "");
   x2("(a|\\k<2>)|(?<=(\\k<1>))", "a", 0, 1);
   x2("(a|\\k<2>)|(?<=b(\\k<1>))", "ba", 1, 2);
+  // #295
+  n("(?<!RMA)X", "123RMAX");
+  x2("(?<=RMA)X", "123RMAX", 6, 7);
+  n("(?<!RMA)$", "123RMA");
+  x2("(?<=RMA)$", "123RMA", 6, 6);
+  n("(?<!RMA)\\Z", "123RMA");
+  x2("(?<=RMA)\\Z", "123RMA", 6, 6);
+  n("(?<!RMA)\\z", "123RMA");
+  x2("(?<=RMA)\\z", "123RMA", 6, 6);
 
   x2("((?(a)\\g<1>|b))", "aab", 0, 3);
   x2("((?(a)\\g<1>))", "aab", 0, 2);
@@ -1639,8 +1648,8 @@ extern int main(int argc, char* argv[])
   e("()(?Ii)", "", ONIGERR_INVALID_GROUP_OPTION);
   e("(?:)(?Ii)", "", ONIGERR_INVALID_GROUP_OPTION);
   e("^(?Ii)", "", ONIGERR_INVALID_GROUP_OPTION);
-  e("(?Ii)$", "", ONIGERR_INVALID_GROUP_OPTION);
-  e("(?Ii)|", "", ONIGERR_INVALID_GROUP_OPTION);
+  x2("(?Ii)$", "", 0, 0);
+  x2("(?Ii)|", "", 0, 0);
   e("(?Ii)|(?Ii)", "", ONIGERR_INVALID_GROUP_OPTION);
   x2("a*", "aabcaaa", 0, 2);
   x2("(?L)a*", "aabcaaa", 4, 7);
@@ -1652,6 +1661,10 @@ extern int main(int argc, char* argv[])
   e("(?C)(..)\\1", "abab", ONIGERR_INVALID_BACKREF);
   e("(?-C)", "", ONIGERR_INVALID_GROUP_OPTION);
   e("(?C)(.)(.)(.)(?<name>.)\\1", "abcdd", ONIGERR_NUMBERED_BACKREF_OR_CALL_NOT_ALLOWED);
+  x2("(?L)z|a\\g<0>a", "aazaa", 0, 5);
+  x2("(?Li)z|a\\g<0>a", "aazAA", 0, 5);
+  x2("(?Li:z|a\\g<0>a)", "aazAA", 0, 5);
+  x2("(?L)z|a\\g<0>a", "aazaaaazaaaa", 3, 12);
 
   // Issue #264
   n("(?iI)s", "\xc5\xbf");
@@ -1749,6 +1762,7 @@ extern int main(int argc, char* argv[])
   e("(?m:*)", "abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
   x2("(?:)*", "abc", 0, 0);
   e("^*", "abc", ONIGERR_TARGET_OF_REPEAT_OPERATOR_INVALID);
+  e("abc|?", "", ONIGERR_TARGET_OF_REPEAT_OPERATOR_NOT_SPECIFIED);
 
   fprintf(stdout,
        "\nRESULT   SUCC: %4d,  FAIL: %d,  ERROR: %d      (by Oniguruma %s)\n",

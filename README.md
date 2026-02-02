@@ -2,7 +2,7 @@
 
 This project builds a signed and notarized universal macOS installer package
 for [`jq`][1], a lightweight and flexible command line JSON processor.  It
-contains the source distribution for `jq` 1.7.1 and [`oniguruma`][2] 6.9.9.
+contains the source distribution for `jq` 1.7.1 and [`oniguruma`][2] 6.9.10.
 
 [1]: https://jqlang.github.io/jq/
 [2]: https://github.com/kkos/oniguruma

@@ -1,6 +1,6 @@
 /*
  * test_syntax.c
- * Copyright (c) 2019-2021  K.Kosako
+ * Copyright (c) 2019-2024  K.Kosako
  */
 #ifdef ONIG_ESCAPE_UCHAR_COLLISION
 #undef ONIG_ESCAPE_UCHAR_COLLISION
@@ -65,7 +65,7 @@ static void xx(char* pattern, char* str, int from, int to, int mem, int not,
   r = onig_search(reg, (UChar* )str, (UChar* )(str + SLEN(str)),
                   (UChar* )str, (UChar* )(str + SLEN(str)),
                   region, ONIG_OPTION_NONE);
-  if (r < ONIG_MISMATCH) {
+  if (r < ONIG_MISMATCH || error_no < ONIG_MISMATCH) {
     char s[ONIG_MAX_ERROR_MESSAGE_LEN];
 
     if (error_no == 0) {
@@ -205,10 +205,34 @@ static int test_look_behind()
   x2("(?<=a|b)c", "abc", 2, 3);
   x2("(?<=a|(.))\\1", "abcc", 3, 4);
 
+  // #295
+  n("(?<!RMA)X", "123RMAX");
+  x2("(?<=RMA)X", "123RMAX", 6, 7);
+  n("(?<!RMA)$", "123RMA");
+  x2("(?<=RMA)$", "123RMA", 6, 6);
+  n("(?<!RMA)\\Z", "123RMA");
+  x2("(?<=RMA)\\Z", "123RMA", 6, 6);
+  n("(?<!RMA)\\z", "123RMA");
+  x2("(?<=RMA)\\z", "123RMA", 6, 6);
+
   // following is not match in Perl and Java
   //x2("(?<=a|(.))\\1", "aa", 1, 2);
 
   n("(?<!c|c)a", "ca");
+
+  return 0;
+}
+
+static int test_char_class()
+{
+  x2("[\\w\\-%]", "a", 0, 1);
+  x2("[\\w\\-%]", "%", 0, 1);
+  x2("[\\w\\-%]", "-", 0, 1);
+
+  //e("[\\w-%]", "-", ONIGERR_UNMATCHED_RANGE_SPECIFIER_IN_CHAR_CLASS);
+  x2("[\\w-%]", "a", 0, 1);
+  x2("[\\w-%]", "%", 0, 1);
+  x2("[\\w-%]", "-", 0, 1);
 
   return 0;
 }
@@ -301,6 +325,7 @@ extern int main(int argc, char* argv[])
   test_isolated_option();
   test_prec_read();
   test_look_behind();
+  test_char_class();
   e("(?<=ab|(.))\\1", "abb", ONIGERR_INVALID_LOOK_BEHIND_PATTERN); // Variable length lookbehind not implemented in Perl 5.26.1
 
   x3("()", "abc", 0, 0, 1);
@@ -315,6 +340,10 @@ extern int main(int argc, char* argv[])
   test_isolated_option();
   test_prec_read();
   test_look_behind();
+  test_char_class();
+
+  n("[[:digit:]]", "1");
+  x2("[[:digit:]]", "g", 0, 1);
   x2("(?<=ab|(.))\\1", "abb", 2, 3);
   n("(?<!ab|b)c", "bbc");
   n("(?<!b|ab)c", "bbc");
@@ -325,6 +354,9 @@ extern int main(int argc, char* argv[])
   test_python_option_ascii();
   test_python_z();
   test_python_single_multi();
+
+  n("[[:digit:]]", "1");
+  x2("[[:digit:]]", "g]", 0, 2);
   x2("(?P<name>abc)", "abc", 0, 3);
   x2("(?P<name>abc)(?P=name)", "abcabc", 0, 6);
   x2("(?P<name>abc){0}(?P>name)", "abc", 0, 3);
@@ -340,6 +372,26 @@ extern int main(int argc, char* argv[])
   test_BRE_anchors();
   x2("zz\\|^ab", "ab", 0, 2);
   x2("ab$\\|zz", "ab", 0, 2);
+  x2("*", "*", 0, 1);
+  x2("^*", "*", 0, 1);
+  x2("abc\\|?", "?", 0, 1);
+  x2("\\{1\\}", "{1}", 0, 3);
+  x2("^\\{1\\}", "{1}", 0, 3);
+  x2("\\(\\{1\\}\\)", "{1}", 0, 3);
+  x2("^\\(\\{1\\}\\)", "{1}", 0, 3);
+  x2("{1}", "{1}", 0, 3);
+  x2("^{1}", "{1}", 0, 3);
+  x2("\\({1}\\)", "{1}", 0, 3);
+  x2("^\\({1}\\)", "{1}", 0, 3);
+  x2("{1,2}", "{1,2}", 0, 5);
+  x2("^{1,2}", "{1,2}", 0, 5);
+  x2("\\({1,2}\\)", "{1,2}", 0, 5);
+  x2("^\\({1,2}\\)", "{1,2}", 0, 5);
+
+  Syntax = ONIG_SYNTAX_EMACS;
+  x2("\\(abc\\)", "abc", 0, 3);
+  x2("\\(?:abc\\)", "abc", 0, 3);
+  x3("\\(?:abc\\)\\(xyz\\)", "abcxyz", 3, 6, 1);
 
   Syntax = ONIG_SYNTAX_PERL_NG;
 
