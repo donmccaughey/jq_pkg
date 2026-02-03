@@ -47,12 +47,25 @@ scan("c")
 "c"
 "c"
 
+scan("(a+)(b+)")
+"abaabbaaabbb"
+["a","b"]
+["aa","bb"]
+["aaa","bbb"]
+
 split(", *"; null)
 "ab,cd, ef"
 ["ab","cd","ef"]
 
 splits(", *")
 "ab,cd,   ef, gh"
+"ab"
+"cd"
+"ef"
+"gh"
+
+splits(",? *"; "n")
+"ab,cd ef,  gh"
 "ab"
 "cd"
 "ef"

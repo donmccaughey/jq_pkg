@@ -12,7 +12,11 @@ JQTESTDIR=$(cd "$(dirname "$0")" && pwd)
 JQBASEDIR=$JQTESTDIR/..
 JQ=${JQ:-$JQBASEDIR/jq}
 
-if [ -z "${NO_VALGRIND-}" ] && which valgrind > /dev/null; then
+# Some tests have locale-dependent output; use C locale.  Fixes #3038
+LC_ALL=C
+export LC_ALL
+
+if [ -n "${ENABLE_VALGRIND-}" ] && which valgrind > /dev/null; then
     VALGRIND="valgrind --error-exitcode=1 --leak-check=full \
                        --suppressions=$JQTESTDIR/onig.supp \
                        --suppressions=$JQTESTDIR/local.supp"

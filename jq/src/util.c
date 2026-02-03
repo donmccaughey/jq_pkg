@@ -98,7 +98,7 @@ jv expand_path(jv path) {
   return ret;
 }
 
-jv get_home() {
+jv get_home(void) {
   jv ret;
   char *home = getenv("HOME");
   if (!home) {
@@ -107,12 +107,12 @@ jv get_home() {
 #else
     home = getenv("USERPROFILE");
     if (!home) {
-      char *hd = getenv("HOMEDRIVE");
-      if (!hd) hd = "";
       home = getenv("HOMEPATH");
       if (!home) {
         ret = jv_invalid_with_msg(jv_string("Could not find home directory."));
       } else {
+        const char *hd = getenv("HOMEDRIVE");
+        if (!hd) hd = "";
         ret = jv_string_fmt("%s%s",hd,home);
       }
     } else {
@@ -271,12 +271,11 @@ static int jq_util_input_read_more(jq_util_input_state *state) {
         fclose(state->current_input);
       }
       state->current_input = NULL;
-      jv_free(state->current_filename);
-      state->current_filename = jv_invalid();
-      state->current_line = 0 ;
     }
     const char *f = next_file(state);
     if (f != NULL) {
+      jv_free(state->current_filename);
+      state->current_line = 0;
       if (!strcmp(f, "-")) {
         state->current_input = stdin;
         state->current_filename = jv_string("<stdin>");
@@ -288,7 +287,6 @@ static int jq_util_input_read_more(jq_util_input_state *state) {
           state->failures++;
         }
       }
-      state->current_line = 0;
     }
   }
 
@@ -344,8 +342,7 @@ static int jq_util_input_read_more(jq_util_input_state *state) {
       }
     }
   }
-  return state->curr_file == state->nfiles &&
-      (!state->current_input || feof(state->current_input) || ferror(state->current_input));
+  return state->curr_file == state->nfiles && !state->current_input;
 }
 
 jv jq_util_input_next_input_cb(jq_state *jq, void *data) {
@@ -399,7 +396,6 @@ jv jq_util_input_get_current_line(jq_state* jq) {
 // When slurping, it returns just one value
 jv jq_util_input_next_input(jq_util_input_state *state) {
   int is_last = 0;
-  int has_more = 0;
   jv value = jv_invalid(); // need more input
   do {
     if (state->parser == NULL) {
@@ -429,10 +425,6 @@ jv jq_util_input_next_input(jq_util_input_state *state) {
       }
       value = jv_parser_next(state->parser);
       if (jv_is_valid(state->slurped)) {
-        // When slurping an input that doesn't have a trailing newline,
-        // we might have more than one value on the same line, so let's check
-        // to see if we have more data to parse.
-        has_more = jv_parser_remaining(state->parser);
         if (jv_is_valid(value)) {
           state->slurped = jv_array_append(state->slurped, value);
           value = jv_invalid();
@@ -442,7 +434,7 @@ jv jq_util_input_next_input(jq_util_input_state *state) {
         return value;
       }
     }
-  } while (!is_last || has_more);
+  } while (!is_last);
 
   if (jv_is_valid(state->slurped)) {
     value = state->slurped;
@@ -451,7 +443,7 @@ jv jq_util_input_next_input(jq_util_input_state *state) {
   return value;
 }
 
-#if defined(WIN32) && !defined(HAVE_STRPTIME)
+#ifndef HAVE_STRPTIME
 /* http://cvsweb.netbsd.org/bsdweb.cgi/~checkout~/src/lib/libc/time/strptime.c?only_with_tag=HEAD
  * NetBSD implementation strptime().
  * Format description: https://netbsd.gw.com/cgi-bin/man-cgi?strptime+3+NetBSD-current
@@ -533,32 +525,32 @@ static const unsigned char *find_string(const unsigned char *, int *, const char
 static char* utc = "UTC";
 #endif
 /* RFC-822/RFC-2822 */
-static const char* const nast[] = {
+static const char *const nast[] = {
        "EST",    "CST",    "MST",    "PST",    "\0\0\0"
 };
-static const char* const nadt[] = {
+static const char *const nadt[] = {
        "EDT",    "CDT",    "MDT",    "PDT",    "\0\0\0"
 };
-static const char* weekday_name[] =
+static const char *const weekday_name[] =
 {
     "Sunday", "Monday", "Tuesday", "Wednesday",
     "Thursday", "Friday", "Saturday"
 };
-static const char* ab_weekday_name[] =
+static const char *const ab_weekday_name[] =
 {
     "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
-static const char* month_name[] =
+static const char *const month_name[] =
 {
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 };
-static const char* ab_month_name[] =
+static const char *const ab_month_name[] =
 {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
-static const char* am_pm[] = {"AM", "PM"};
+static const char *const am_pm[] = {"AM", "PM"};
 
 
 /*
@@ -708,7 +700,7 @@ recurse:
             continue;
 
         case 'x':	/* The date, using the locale's format. */
-            /* fall throug */
+            /* fall through */
 
         case 'D':	/* The date as "%y/%m/%d". */
         {
@@ -818,40 +810,46 @@ recurse:
             LEGAL_ALT(ALT_O);
             continue;
 
-#ifndef TIME_MAX
-#define TIME_MAX	INT64_MAX
-#endif
-        case 's':	/* seconds since the epoch */
-            {
-                time_t sse = 0;
-                uint64_t rulim = TIME_MAX;
-
-                if (*bp < '0' || *bp > '9') {
-                    bp = NULL;
-                    continue;
-                }
-
-                do {
-                    sse *= 10;
-                    sse += *bp++ - '0';
-                    rulim /= 10;
-                } while ((sse * 10 <= TIME_MAX) &&
-                     rulim && *bp >= '0' && *bp <= '9');
-
-                if (sse < 0 || (uint64_t)sse > TIME_MAX) {
-                    bp = NULL;
-                    continue;
-                }
+        case 's': {     /* seconds since the epoch */
 #ifdef _WIN32
-                if (localtime_s(tm, &sse) == 0)
+            const time_t TIME_MAX = INT32_MAX;
 #else
-                if (localtime_r(&sse, tm))
+            const time_t TIME_MAX = INT64_MAX;
 #endif
-                    state |= S_YDAY | S_WDAY | S_MON | S_MDAY | S_YEAR;
-                else
-                    bp = NULL;
+            time_t sse, d;
+
+            if (*bp < '0' || *bp > '9') {
+                bp = NULL;
+                continue;
             }
+
+            sse = *bp++ - '0';
+            while (*bp >= '0' && *bp <= '9') {
+                d = *bp++ - '0';
+                if (sse > TIME_MAX/10) {
+                    bp = NULL;
+                    break;
+                }
+                sse *= 10;
+                if (sse > TIME_MAX - d) {
+                    bp = NULL;
+                    break;
+                }
+                sse += d;
+            }
+            if (bp == NULL)
+                continue;
+
+#ifdef _WIN32
+            if (localtime_s(tm, &sse))
+#else
+            if (localtime_r(&sse, tm) == NULL)
+#endif
+                bp = NULL;
+            else
+                state |= S_YDAY | S_WDAY | S_MON | S_MDAY | S_YEAR;
             continue;
+            }
 
         case 'U':	/* The week of year, beginning on sunday. */
         case 'W':	/* The week of year, beginning on monday. */

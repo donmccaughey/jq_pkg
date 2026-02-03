@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import glob
 import itertools
 from jinja2 import Environment, FileSystemLoader, select_autoescape, pass_context
@@ -10,10 +9,6 @@ import os.path
 import re
 import shutil
 import yaml
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--root', default='/jq')
-args = parser.parse_args()
 
 env = Environment(
     loader=FileSystemLoader('templates'),
@@ -26,9 +21,7 @@ def load_yml_file(fn):
         return yaml.safe_load(f)
 
 
-env.globals['url'] = 'https://jqlang.github.io/jq'
-env.globals['root'] = args.root
-
+env.globals['url'] = 'https://jqlang.org'
 env.filters['search_id'] = lambda input: input.replace(r'`', '')
 env.filters['section_id'] = lambda input: re.sub(
     r'[^-a-zA-Z0-9_]', '', input.replace(' ', '-')).lower()

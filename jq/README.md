@@ -4,8 +4,8 @@
 
 ## Documentation
 
-- **Official Documentation**: [jqlang.github.io/jq](https://jqlang.github.io/jq)
-- **Try jq Online**: [jqplay.org](https://jqplay.org)
+- **Official Documentation**: [jqlang.org](https://jqlang.org)
+- **Try jq Online**: [play.jqlang.org](https://play.jqlang.org)
 
 ## Installation
 
@@ -16,6 +16,20 @@ Download the latest releases from the [GitHub release page](https://github.com/j
 ### Docker Image
 
 Pull the [jq image](https://github.com/jqlang/jq/pkgs/container/jq) to start quickly with Docker.
+
+#### Run with Docker
+
+##### Example: Extracting the version from a `package.json` file
+
+```bash
+docker run --rm -i ghcr.io/jqlang/jq:latest < package.json '.version'
+```
+
+##### Example: Extracting the version from a `package.json` file with a mounted volume
+
+```bash
+docker run --rm -i -v "$PWD:$PWD" -w "$PWD" ghcr.io/jqlang/jq:latest '.version' package.json
+```
 
 ### Building from source
 
@@ -29,9 +43,10 @@ Pull the [jq image](https://github.com/jqlang/jq/pkgs/container/jq) to start qui
 #### Instructions
 
 ```console
-git submodule update --init # if building from git to get oniguruma
-autoreconf -i               # if building from git
+git submodule update --init    # if building from git to get oniguruma
+autoreconf -i                  # if building from git
 ./configure --with-oniguruma=builtin
+make clean                     # if upgrading from a version previously built from source
 make -j8
 make check
 sudo make install
@@ -57,4 +72,7 @@ For details on cross-compilation, check out the [GitHub Actions file](.github/wo
 
 ## License
 
-`jq` is released under the [MIT License](COPYING).
+`jq` is released under the [MIT License](COPYING). `jq`'s documentation is
+licensed under the [Creative Commons CC BY 3.0](COPYING).
+`jq` uses parts of the open source C library "decNumber", which is distributed
+under [ICU License](COPYING)

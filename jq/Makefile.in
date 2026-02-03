@@ -96,10 +96,12 @@ host_triplet = @host@
 @WIN32_TRUE@am__append_1 = -municode
 @WIN32_TRUE@am__append_2 = -lshlwapi
 @WIN32_TRUE@am__append_3 = -no-undefined
-@ENABLE_UBSAN_TRUE@am__append_4 = -fsanitize=undefined
 
-### Running tests under Valgrind
-@ENABLE_ASAN_TRUE@am__append_5 = -fsanitize=address
+### Address sanitizer (ASan)
+@ENABLE_ASAN_TRUE@am__append_4 = -fsanitize=address
+
+### Undefined Behavior Sanitizer
+@ENABLE_UBSAN_TRUE@am__append_5 = -fsanitize=undefined
 
 ### Code coverage with gcov
 @ENABLE_GCOV_TRUE@am__append_6 = --coverage --no-inline
@@ -107,12 +109,13 @@ host_triplet = @host@
 ### Error injection for testing
 @ENABLE_ERROR_INJECTION_TRUE@am__append_7 = libinject_errors.la
 bin_PROGRAMS = jq$(EXEEXT)
-@ENABLE_ALL_STATIC_TRUE@am__append_8 = -all-static
-@WIN32_FALSE@am__append_9 = tests/optionaltest
+@WIN32_FALSE@am__append_8 = tests/optionaltest
+@ENABLE_VALGRIND_TRUE@am__append_9 = ENABLE_VALGRIND=1
 
 ### Build oniguruma
-@BUILD_ONIGURUMA_TRUE@am__append_10 = modules/oniguruma/src/.libs/libonig.la
-@WITH_ONIGURUMA_TRUE@am__append_11 = tests/onigtest tests/manonigtest
+@BUILD_ONIGURUMA_TRUE@am__append_10 = vendor/oniguruma/src/.libs/libonig.la
+@BUILD_ONIGURUMA_TRUE@am__append_11 = vendor/oniguruma/src/.libs/libonig.la
+@WITH_ONIGURUMA_TRUE@am__append_12 = tests/onigtest tests/manonigtest
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_compare_version.m4 \
@@ -193,8 +196,8 @@ am__objects_2 = src/builtin.lo src/bytecode.lo src/compile.lo \
 	src/execute.lo src/jq_test.lo src/jv.lo src/jv_alloc.lo \
 	src/jv_aux.lo src/jv_dtoa.lo src/jv_file.lo src/jv_parse.lo \
 	src/jv_print.lo src/jv_unicode.lo src/linker.lo src/locfile.lo \
-	src/util.lo src/decNumber/decContext.lo \
-	src/decNumber/decNumber.lo src/jv_dtoa_tsd.lo $(am__objects_1)
+	src/util.lo src/jv_dtoa_tsd.lo vendor/decNumber/decContext.lo \
+	vendor/decNumber/decNumber.lo $(am__objects_1)
 am_libjq_la_OBJECTS = $(am__objects_2)
 libjq_la_OBJECTS = $(am_libjq_la_OBJECTS)
 libjq_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -202,7 +205,7 @@ libjq_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(libjq_la_LDFLAGS) $(LDFLAGS) -o $@
 am_jq_OBJECTS = src/main.$(OBJEXT)
 jq_OBJECTS = $(am_jq_OBJECTS)
-jq_DEPENDENCIES = libjq.la
+jq_DEPENDENCIES = libjq.la $(am__append_11)
 jq_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(jq_LDFLAGS) $(LDFLAGS) -o $@
@@ -232,8 +235,8 @@ am__depfiles_remade = src/$(DEPDIR)/builtin.Plo \
 	src/$(DEPDIR)/lexer.Plo src/$(DEPDIR)/linker.Plo \
 	src/$(DEPDIR)/locfile.Plo src/$(DEPDIR)/main.Po \
 	src/$(DEPDIR)/parser.Plo src/$(DEPDIR)/util.Plo \
-	src/decNumber/$(DEPDIR)/decContext.Plo \
-	src/decNumber/$(DEPDIR)/decNumber.Plo
+	vendor/decNumber/$(DEPDIR)/decContext.Plo \
+	vendor/decNumber/$(DEPDIR)/decNumber.Plo
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -497,7 +500,7 @@ TEST_LOGS = $(am__test_logs2:.test.log=.log)
 TEST_LOG_DRIVER = $(SHELL) $(top_srcdir)/config/test-driver
 TEST_LOG_COMPILE = $(TEST_LOG_COMPILER) $(AM_TEST_LOG_FLAGS) \
 	$(TEST_LOG_FLAGS)
-DIST_SUBDIRS = modules/oniguruma
+DIST_SUBDIRS = vendor/oniguruma
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/libjq.pc.in \
 	$(top_srcdir)/config/ar-lib $(top_srcdir)/config/compile \
 	$(top_srcdir)/config/config.guess \
@@ -564,7 +567,6 @@ AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
 BISON_VERSION = @BISON_VERSION@
-BUNDLER = @BUNDLER@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
@@ -585,6 +587,7 @@ EGREP = @EGREP@
 ETAGS = @ETAGS@
 EXEEXT = @EXEEXT@
 FGREP = @FGREP@
+FILECMD = @FILECMD@
 GREP = @GREP@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
@@ -704,28 +707,27 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-valgrind_cmd = @valgrind_cmd@
 LIBJQ_INCS = src/builtin.h src/bytecode.h src/compile.h                 \
         src/exec_stack.h src/jq_parser.h src/jv_alloc.h src/jv_dtoa.h   \
         src/jv_unicode.h src/jv_utf8_tables.h src/lexer.l src/libm.h    \
         src/linker.h src/locfile.h src/opcode_list.h src/parser.y       \
-        src/util.h src/decNumber/decContext.h src/decNumber/decNumber.h \
-        src/decNumber/decNumberLocal.h src/jv_dtoa_tsd.h src/jv_thread.h \
-        src/jv_private.h
+        src/util.h src/jv_dtoa_tsd.h src/jv_thread.h src/jv_private.h   \
+        vendor/decNumber/decContext.h vendor/decNumber/decNumber.h      \
+        vendor/decNumber/decNumberLocal.h
 
 LIBJQ_SRC = src/builtin.c src/bytecode.c src/compile.c src/execute.c    \
         src/jq_test.c src/jv.c src/jv_alloc.c src/jv_aux.c              \
         src/jv_dtoa.c src/jv_file.c src/jv_parse.c src/jv_print.c       \
         src/jv_unicode.c src/linker.c src/locfile.c src/util.c          \
-        src/decNumber/decContext.c src/decNumber/decNumber.c            \
         src/jv_dtoa_tsd.c                                               \
+        vendor/decNumber/decContext.c vendor/decNumber/decNumber.c      \
         ${LIBJQ_INCS}
 
 
 ### C build options
 AM_CFLAGS = -Wextra -Wall -Wno-unused-parameter -Wno-unused-function \
-	$(am__append_1) $(am__append_4) $(am__append_5) \
-	$(am__append_6) $(onig_CFLAGS)
+	-Woverlength-strings -Wstrict-prototypes $(am__append_1) \
+	$(am__append_4) $(am__append_5) $(am__append_6) $(onig_CFLAGS)
 ACLOCAL_AMFLAGS = -I config/m4
 @MAINTAINER_MODE_FALSE@BUILT_SOURCES = src/builtin.inc src/config_opts.inc src/version.h
 
@@ -733,8 +735,8 @@ ACLOCAL_AMFLAGS = -I config/m4
 
 # While there is some autoconf macro support for lex/flex, it doesn't support
 # header file creation so we'll use good old make
-@MAINTAINER_MODE_TRUE@BUILT_SOURCES = src/lexer.h src/lexer.c src/parser.h src/parser.c 	\
-@MAINTAINER_MODE_TRUE@		src/builtin.inc src/config_opts.inc src/version.h
+@MAINTAINER_MODE_TRUE@BUILT_SOURCES = src/lexer.h src/lexer.c src/parser.h src/parser.c \
+@MAINTAINER_MODE_TRUE@                src/builtin.inc src/config_opts.inc src/version.h
 
 
 # Tell YACC (Bison) autoconf macros that you want a header file created.
@@ -749,24 +751,22 @@ libjq_la_LIBADD = -lm $(am__append_2) $(am__append_10)
 libjq_la_LDFLAGS = $(onig_LDFLAGS) -export-symbols-regex '^j[qv]_' \
 	-version-info 1:4:0 $(am__append_3)
 include_HEADERS = src/jv.h src/jq.h
-AM_CPPFLAGS = -I$(srcdir)/src
-@ENABLE_ASAN_FALSE@@ENABLE_VALGRIND_FALSE@NO_VALGRIND = 1
-@ENABLE_ASAN_FALSE@@ENABLE_VALGRIND_TRUE@NO_VALGRIND = 
-@ENABLE_ASAN_TRUE@NO_VALGRIND = 1
+AM_CPPFLAGS = -I$(srcdir)/src -I$(srcdir)/vendor
 @ENABLE_ERROR_INJECTION_TRUE@libinject_errors_la_SOURCES = src/inject_errors.c
 @ENABLE_ERROR_INJECTION_TRUE@libinject_errors_la_LIBADD = -ldl
 @ENABLE_ERROR_INJECTION_TRUE@libinject_errors_la_LDFLAGS = -module
-generate_ver = ver="`{ $(srcdir)/scripts/version || echo '$(VERSION)' ; } | sed 's/.*/\#define JQ_VERSION \"&\"/'`"
+generate_ver = ver="`{ $(srcdir)/scripts/version || echo '$(VERSION)' ; } | xargs printf '\043define JQ_VERSION \"%s\"\n'`"
 CLEANFILES = src/version.h .remake-version-h src/builtin.inc \
 	src/config_opts.inc jq.1
-jq_SOURCES = src/main.c src/version.h
-jq_LDFLAGS = -static-libtool-libs $(am__append_8)
-jq_LDADD = libjq.la -lm
+jq_SOURCES = src/main.c
+jq_LDADD = libjq.la -lm $(am__append_11)
+@ENABLE_ALL_STATIC_TRUE@jq_LDFLAGS = -all-static
 
 ### Tests (make check)
 TESTS = tests/mantest tests/jqtest tests/shtest tests/utf8test \
-	tests/base64test $(am__append_9) $(am__append_11)
-AM_TESTS_ENVIRONMENT = JQ=$(abs_builddir)/jq NO_VALGRIND=$(NO_VALGRIND)
+	tests/base64test tests/uritest $(am__append_8) \
+	$(am__append_12)
+AM_TESTS_ENVIRONMENT = JQ=$(abs_builddir)/jq $(am__append_9)
 
 # This is a magic make variable that causes it to treat tests/man.test as a
 # DATA-type dependency for the check target. As a result, it will attempt to
@@ -780,7 +780,7 @@ check_DATA = tests/man.test
 # manpage, then we'll end up using the cached version. Otherwise, we need to
 # rebuild it.
 man_MANS = jq.1
-@BUILD_ONIGURUMA_TRUE@SUBDIRS = modules/oniguruma
+@BUILD_ONIGURUMA_TRUE@SUBDIRS = vendor/oniguruma
 DOC_FILES = docs/content docs/public docs/templates                     \
         docs/Pipfile docs/Pipfile.lock docs/build_manpage.py            \
         docs/build_mantests.py docs/build_website.py docs/README.md     \
@@ -790,7 +790,6 @@ EXTRA_DIST = $(DOC_FILES) $(man_MANS) $(TESTS) $(TEST_LOG_COMPILER)     \
         jq.1.prebuilt jq.spec src/lexer.c src/lexer.h src/parser.c      \
         src/parser.h src/version.h src/builtin.jq scripts/version       \
         libjq.pc                                                        \
-        tests/base64.test tests/jq-f-test.sh tests/jq.test              \
         tests/modules/a.jq tests/modules/b/b.jq tests/modules/c/c.jq    \
         tests/modules/c/d.jq tests/modules/data.json                    \
         tests/modules/home1/.jq tests/modules/home2/.jq/g.jq            \
@@ -804,7 +803,7 @@ EXTRA_DIST = $(DOC_FILES) $(man_MANS) $(TESTS) $(TEST_LOG_COMPILER)     \
         tests/onig.supp tests/local.supp                                \
         tests/setup tests/torture/input0.json                           \
         tests/optional.test tests/man.test tests/manonig.test           \
-        tests/jq.test tests/onig.test tests/base64.test                 \
+        tests/jq.test tests/onig.test tests/base64.test tests/uri.test  \
         tests/utf8-truncate.jq tests/jq-f-test.sh                       \
         tests/no-main-program.jq tests/yes-main-program.jq
 
@@ -966,17 +965,17 @@ src/jv_unicode.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 src/linker.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 src/locfile.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 src/util.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
-src/decNumber/$(am__dirstamp):
-	@$(MKDIR_P) src/decNumber
-	@: > src/decNumber/$(am__dirstamp)
-src/decNumber/$(DEPDIR)/$(am__dirstamp):
-	@$(MKDIR_P) src/decNumber/$(DEPDIR)
-	@: > src/decNumber/$(DEPDIR)/$(am__dirstamp)
-src/decNumber/decContext.lo: src/decNumber/$(am__dirstamp) \
-	src/decNumber/$(DEPDIR)/$(am__dirstamp)
-src/decNumber/decNumber.lo: src/decNumber/$(am__dirstamp) \
-	src/decNumber/$(DEPDIR)/$(am__dirstamp)
 src/jv_dtoa_tsd.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
+vendor/decNumber/$(am__dirstamp):
+	@$(MKDIR_P) vendor/decNumber
+	@: > vendor/decNumber/$(am__dirstamp)
+vendor/decNumber/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) vendor/decNumber/$(DEPDIR)
+	@: > vendor/decNumber/$(DEPDIR)/$(am__dirstamp)
+vendor/decNumber/decContext.lo: vendor/decNumber/$(am__dirstamp) \
+	vendor/decNumber/$(DEPDIR)/$(am__dirstamp)
+vendor/decNumber/decNumber.lo: vendor/decNumber/$(am__dirstamp) \
+	vendor/decNumber/$(DEPDIR)/$(am__dirstamp)
 src/lexer.lo: src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 src/parser.h: src/parser.c
 	@if test ! -f $@; then rm -f src/parser.c; else :; fi
@@ -995,8 +994,8 @@ mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 	-rm -f src/*.$(OBJEXT)
 	-rm -f src/*.lo
-	-rm -f src/decNumber/*.$(OBJEXT)
-	-rm -f src/decNumber/*.lo
+	-rm -f vendor/decNumber/*.$(OBJEXT)
+	-rm -f vendor/decNumber/*.lo
 
 distclean-compile:
 	-rm -f *.tab.c
@@ -1022,8 +1021,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/main.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/parser.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/util.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/decNumber/$(DEPDIR)/decContext.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/decNumber/$(DEPDIR)/decNumber.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@vendor/decNumber/$(DEPDIR)/decContext.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@vendor/decNumber/$(DEPDIR)/decNumber.Plo@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -1067,7 +1066,7 @@ mostlyclean-libtool:
 clean-libtool:
 	-rm -rf .libs _libs
 	-rm -rf src/.libs src/_libs
-	-rm -rf src/decNumber/.libs src/decNumber/_libs
+	-rm -rf vendor/decNumber/.libs vendor/decNumber/_libs
 
 distclean-libtool:
 	-rm -f libtool config.lt
@@ -1460,6 +1459,13 @@ tests/base64test.log: tests/base64test
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tests/uritest.log: tests/uritest
+	@p='tests/uritest'; \
+	b='tests/uritest'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 tests/optionaltest.log: tests/optionaltest
 	@p='tests/optionaltest'; \
 	b='tests/optionaltest'; \
@@ -1739,8 +1745,8 @@ distclean-generic:
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
 	-rm -f src/$(DEPDIR)/$(am__dirstamp)
 	-rm -f src/$(am__dirstamp)
-	-rm -f src/decNumber/$(DEPDIR)/$(am__dirstamp)
-	-rm -f src/decNumber/$(am__dirstamp)
+	-rm -f vendor/decNumber/$(DEPDIR)/$(am__dirstamp)
+	-rm -f vendor/decNumber/$(am__dirstamp)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -1777,8 +1783,8 @@ distclean: distclean-recursive
 	-rm -f src/$(DEPDIR)/main.Po
 	-rm -f src/$(DEPDIR)/parser.Plo
 	-rm -f src/$(DEPDIR)/util.Plo
-	-rm -f src/decNumber/$(DEPDIR)/decContext.Plo
-	-rm -f src/decNumber/$(DEPDIR)/decNumber.Plo
+	-rm -f vendor/decNumber/$(DEPDIR)/decContext.Plo
+	-rm -f vendor/decNumber/$(DEPDIR)/decNumber.Plo
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-libtool distclean-tags
@@ -1848,8 +1854,8 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f src/$(DEPDIR)/main.Po
 	-rm -f src/$(DEPDIR)/parser.Plo
 	-rm -f src/$(DEPDIR)/util.Plo
-	-rm -f src/decNumber/$(DEPDIR)/decContext.Plo
-	-rm -f src/decNumber/$(DEPDIR)/decNumber.Plo
+	-rm -f vendor/decNumber/$(DEPDIR)/decContext.Plo
+	-rm -f vendor/decNumber/$(DEPDIR)/decNumber.Plo
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -1929,7 +1935,12 @@ src/main.c: src/version.h src/config_opts.inc
 
 src/builtin.inc: $(srcdir)/src/builtin.jq
 	mkdir -p src
-	$(AM_V_GEN) sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$$/\\n"/' $(srcdir)/src/builtin.jq > $@
+	$(AM_V_GEN) od -v -A n -t o1 -- $< | \
+	sed -e 's/$$/ /' \
+	    -e 's/\([0123456789]\) /\1, /g' \
+	    -e 's/ $$//' \
+	    -e 's/ 0/  0/g' \
+	    -e 's/ \([123456789]\)/ 0\1/g' > $@
 src/builtin.o: src/builtin.inc
 
 ### Building the man tests
@@ -1939,16 +1950,16 @@ src/builtin.o: src/builtin.inc
 # Making changes to the manpage without having the python deps means your
 # tests won't run. If you aren't making changes to the examples, you probably
 # don't care. But if you are, then you need to run the tests anyway.
-tests/man.test tests/manonig.test: $(srcdir)/docs/content/manual/manual.yml
+tests/man.test tests/manonig.test: $(srcdir)/docs/content/manual/dev/manual.yml
 @ENABLE_DOCS_TRUE@	$(AM_V_GEN) ( cd ${abs_srcdir}/docs && \
-@ENABLE_DOCS_TRUE@		$(PIPENV) run python validate_manual_schema.py content/manual/manual.yml && \
-@ENABLE_DOCS_TRUE@		$(PIPENV) run python build_mantests.py )
+@ENABLE_DOCS_TRUE@	  $(PIPENV) run python validate_manual_schema.py content/manual/dev/manual.yml && \
+@ENABLE_DOCS_TRUE@	  $(PIPENV) run python build_mantests.py )
 @ENABLE_DOCS_FALSE@	@echo Changes to the manual.yml require docs to be enabled to update the manual test.
 @ENABLE_DOCS_FALSE@	@echo As a result, the manual test is out of date.
-jq.1.prebuilt: $(srcdir)/docs/content/manual/manual.yml
+jq.1.prebuilt: $(srcdir)/docs/content/manual/dev/manual.yml
 @ENABLE_DOCS_TRUE@	$(AM_V_GEN) ( cd ${abs_srcdir}/docs && \
-@ENABLE_DOCS_TRUE@		$(PIPENV) run python validate_manual_schema.py content/manual/manual.yml && \
-@ENABLE_DOCS_TRUE@		$(PIPENV) run python build_manpage.py ) > $@
+@ENABLE_DOCS_TRUE@	  $(PIPENV) run python validate_manual_schema.py content/manual/dev/manual.yml && \
+@ENABLE_DOCS_TRUE@	  $(PIPENV) run python build_manpage.py ) > $@
 @ENABLE_DOCS_FALSE@	@echo Changes to the manual.yml require docs to be enabled to update the manpage.
 @ENABLE_DOCS_FALSE@	@echo As a result, the manpage is out of date.
 

@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include "jv.h"
 #include "jv_alloc.h"
 #include "jv_private.h"
 
@@ -193,18 +194,19 @@ jv jv_set(jv t, jv k, jv v) {
         if (slice_len < insert_len) {
           // array is growing
           int shift = insert_len - slice_len;
-          for (int i = array_len - 1; i >= end; i--) {
+          for (int i = array_len - 1; i >= end && jv_is_valid(t); i--) {
             t = jv_array_set(t, i + shift, jv_array_get(jv_copy(t), i));
           }
         } else if (slice_len > insert_len) {
           // array is shrinking
           int shift = slice_len - insert_len;
-          for (int i = end; i < array_len; i++) {
+          for (int i = end; i < array_len && jv_is_valid(t); i++) {
             t = jv_array_set(t, i - shift, jv_array_get(jv_copy(t), i));
           }
-          t = jv_array_slice(t, 0, array_len - shift);
+          if (jv_is_valid(t))
+            t = jv_array_slice(t, 0, array_len - shift);
         }
-        for (int i=0; i < insert_len; i++) {
+        for (int i = 0; i < insert_len && jv_is_valid(t); i++) {
           t = jv_array_set(t, start + i, jv_array_get(jv_copy(v), i));
         }
         jv_free(v);
@@ -314,7 +316,7 @@ static jv jv_dels(jv t, jv keys) {
     int neg_idx = 0;
     int nonneg_idx = 0;
     int len = jv_array_length(jv_copy(t));
-    jv_array_foreach(t, i, elem) {
+    for (int i = 0; i < len; ++i) {
       int del = 0;
       while (neg_idx < jv_array_length(jv_copy(neg_keys))) {
         int delidx = len + (int)jv_number_get_value_and_consume(jv_array_get(jv_copy(neg_keys), neg_idx));
@@ -343,9 +345,7 @@ static jv jv_dels(jv t, jv keys) {
         }
       }
       if (!del)
-        new_array = jv_array_append(new_array, elem);
-      else
-        jv_free(elem);
+        new_array = jv_array_append(new_array, jv_array_get(jv_copy(t), i));
     }
   arr_out:
     jv_free(neg_keys);
@@ -419,6 +419,7 @@ jv jv_setpath(jv root, jv path, jv value) {
   // to null first.
   root = jv_set(root, jv_copy(pathcurr), jv_null());
   if (!jv_is_valid(root)) {
+    jv_free(subroot);
     jv_free(pathcurr);
     jv_free(pathrest);
     jv_free(value);
@@ -553,6 +554,10 @@ jv jv_keys_unsorted(jv x) {
 jv jv_keys(jv x) {
   if (jv_get_kind(x) == JV_KIND_OBJECT) {
     int nkeys = jv_object_length(jv_copy(x));
+    if (nkeys == 0) {
+      jv_free(x);
+      return jv_array();
+    }
     jv* keys = jv_mem_calloc(nkeys, sizeof(jv));
     int kidx = 0;
     jv_object_foreach(x, key, value) {
@@ -674,6 +679,11 @@ static struct sort_entry* sort_items(jv objects, jv keys) {
   assert(jv_get_kind(keys) == JV_KIND_ARRAY);
   assert(jv_array_length(jv_copy(objects)) == jv_array_length(jv_copy(keys)));
   int n = jv_array_length(jv_copy(objects));
+  if (n == 0) {
+    jv_free(objects);
+    jv_free(keys);
+    return NULL;
+  }
   struct sort_entry* entries = jv_mem_calloc(n, sizeof(struct sort_entry));
   for (int i=0; i<n; i++) {
     entries[i].object = jv_array_get(jv_copy(objects), i);
@@ -725,6 +735,29 @@ jv jv_group(jv objects, jv keys) {
     jv_free(curr_key);
     ret = jv_array_append(ret, group);
   }
+  jv_mem_free(entries);
+  return ret;
+}
+
+jv jv_unique(jv objects, jv keys) {
+  assert(jv_get_kind(objects) == JV_KIND_ARRAY);
+  assert(jv_get_kind(keys) == JV_KIND_ARRAY);
+  assert(jv_array_length(jv_copy(objects)) == jv_array_length(jv_copy(keys)));
+  int n = jv_array_length(jv_copy(objects));
+  struct sort_entry* entries = sort_items(objects, keys);
+  jv ret = jv_array();
+  jv curr_key = jv_invalid();
+  for (int i = 0; i < n; i++) {
+    if (jv_equal(jv_copy(curr_key), jv_copy(entries[i].key))) {
+      jv_free(entries[i].key);
+      jv_free(entries[i].object);
+    } else {
+      jv_free(curr_key);
+      curr_key = entries[i].key;
+      ret = jv_array_append(ret, entries[i].object);
+    }
+  }
+  jv_free(curr_key);
   jv_mem_free(entries);
   return ret;
 }

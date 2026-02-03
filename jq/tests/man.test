@@ -6,21 +6,25 @@
 0.12345678901234567890123456789
 0.12345678901234567890123456789
 
-[., tojson]
+[., tojson] == if have_decnum then [12345678909876543212345,"12345678909876543212345"] else [12345678909876543000000,"12345678909876543000000"] end
 12345678909876543212345
-[12345678909876543212345,"12345678909876543212345"]
+true
+
+[1234567890987654321,-1234567890987654321 | tojson] == if have_decnum then ["1234567890987654321","-1234567890987654321"] else ["1234567890987654400","-1234567890987654400"] end
+null
+true
 
 . < 0.12345678901234567890123456788
 0.12345678901234567890123456789
 false
 
-map([., . == 1]) | tojson
+map([., . == 1]) | tojson == if have_decnum then "[[1,true],[1.000,true],[1.0,true],[1.00,true]]" else "[[1,true],[1,true],[1,true],[1,true]]" end
 [1, 1.000, 1.0, 100e-2]
-"[[1,true],[1.000,true],[1.0,true],[1.00,true]]"
+true
 
-. as $big | [$big, $big + 1] | map(. > 10000000000000000000000000000000)
+. as $big | [$big, $big + 1] | map(. > 10000000000000000000000000000000) | . == if have_decnum then [true, false] else [false, false] end
 10000000000000000000000000000001
-[true, false]
+true
 
 .foo
 {"foo": 42, "bar": "less interesting data"}
@@ -358,6 +362,10 @@ add
 []
 null
 
+add(.[].a)
+[{"a":3}, {"a":5}, {"b":6}]
+8
+
 any
 [true, false]
 true
@@ -435,6 +443,13 @@ sqrt
 [1, "1"]
 1
 1
+
+.[] | toboolean
+["true", "false", true, false]
+true
+false
+true
+false
 
 .[] | tostring
 [1, "1", [1]]
@@ -601,6 +616,16 @@ combinations(2)
 [.[]|rtrimstr("foo")]
 ["fo", "foo", "barfoo", "foobar", "foob"]
 ["fo","","bar","foobar","foob"]
+
+[.[]|trimstr("foo")]
+["fo", "foo", "barfoo", "foobarfoo", "foob"]
+["fo","","bar","bar","b"]
+
+trim, ltrim, rtrim
+" abc "
+"abc"
+"abc "
+" abc"
 
 explode
 "foobar"
@@ -863,13 +888,21 @@ isempty(.[])
 [1,2,3]
 false
 
-[limit(3;.[])]
+[limit(3; .[])]
 [0,1,2,3,4,5,6,7,8,9]
 [0,1,2]
 
-[first(range(.)), last(range(.)), nth(./2; range(.))]
+[skip(3; .[])]
+[0,1,2,3,4,5,6,7,8,9]
+[3,4,5,6,7,8,9]
+
+[first(range(.)), last(range(.)), nth(5; range(.))]
 10
 [0,9,5]
+
+[first(empty), last(empty), nth(5; empty)]
+null
+[]
 
 [range(.)]|[first, last, nth(5)]
 10
@@ -909,7 +942,7 @@ foreach .[] as $item (0; . + 1; {index: ., $item})
 {"index":2,"item":"bar"}
 {"index":3,"item":"baz"}
 
-def range(init; upto; by): def _range: if (by > 0 and . < upto) or (by < 0 and . > upto) then ., ((.+by)|_range) else . end; if by == 0 then init else init|_range end | select((by > 0 and . < upto) or (by < 0 and . > upto)); range(0; 10; 3)
+def range(init; upto; by): def _range: if (by > 0 and . < upto) or (by < 0 and . > upto) then ., ((.+by)|_range) else empty end; if init == upto then empty elif by == 0 then init else init|_range end; range(0; 10; 3)
 null
 0
 3
@@ -920,14 +953,14 @@ def while(cond; update): def _while: if cond then ., (update | _while) else empt
 1
 [1,2,4,8,16,32,64]
 
-truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]])
+truncate_stream([[0],"a"],[[1,0],"b"],[[1,0]],[[1]])
 1
-[[0],2]
+[[0],"b"]
 [[0]]
 
-fromstream(1|truncate_stream([[0],1],[[1,0],2],[[1,0]],[[1]]))
+fromstream(1|truncate_stream([[0],"a"],[[1,0],"b"],[[1,0]],[[1]]))
 null
-[2]
+["b"]
 
 . as $dot|fromstream($dot|tostream)|.==$dot
 [0,[1,{"a":1},{"b":2}]]

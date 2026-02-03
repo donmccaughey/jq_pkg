@@ -5,24 +5,12 @@
 # define _XPG6
 # define __EXTENSIONS__
 #endif
+#ifdef __OpenBSD__
+# define _BSD_SOURCE
+#endif
 #include <sys/time.h>
 #include <stdlib.h>
 #include <stddef.h>
-#ifdef HAVE_ALLOCA_H
-# include <alloca.h>
-#elif !defined alloca
-# ifdef __GNUC__
-#  define alloca __builtin_alloca
-# elif defined _MSC_VER
-#  include <malloc.h>
-#  define alloca _alloca
-# elif !defined HAVE_ALLOCA
-#  ifdef  __cplusplus
-extern "C"
-#  endif
-void *alloca (size_t);
-# endif
-#endif
 #include <assert.h>
 #include <ctype.h>
 #include <limits.h>
@@ -43,6 +31,8 @@ void *alloca (size_t);
 #include "locfile.h"
 #include "jv_unicode.h"
 #include "jv_alloc.h"
+#include "jv_dtoa.h"
+#include "jv_dtoa_tsd.h"
 #include "jv_private.h"
 #include "util.h"
 
@@ -155,7 +145,11 @@ static jv f_ ## name(jq_state *jq, jv input) { \
   jv_free(input); \
   return ret; \
 }
-#define LIBM_DD_NO(name)
+#define LIBM_DD_NO(name) \
+static jv f_ ## name(jq_state *jq, jv input) { \
+  jv error = jv_string("Error: " #name "/0 not found at build time"); \
+  return ret_error(input, error); \
+}
 
 #define LIBM_DDD(name) \
 static jv f_ ## name(jq_state *jq, jv input, jv a, jv b) { \
@@ -173,7 +167,12 @@ static jv f_ ## name(jq_state *jq, jv input, jv a, jv b) { \
   jv_free(b); \
   return ret; \
 }
-#define LIBM_DDD_NO(name)
+#define LIBM_DDD_NO(name) \
+static jv f_ ## name(jq_state *jq, jv input, jv a, jv b) { \
+  jv_free(b); \
+  jv error = jv_string("Error: " #name "/2 not found at build time"); \
+  return ret_error2(input, a, error); \
+}
 
 #define LIBM_DDDD(name) \
 static jv f_ ## name(jq_state *jq, jv input, jv a, jv b, jv c) { \
@@ -199,14 +198,40 @@ static jv f_ ## name(jq_state *jq, jv input, jv a, jv b, jv c) { \
   jv_free(c); \
   return ret; \
 }
-#define LIBM_DDDD_NO(name)
+#define LIBM_DDDD_NO(name) \
+static jv f_ ## name(jq_state *jq, jv input, jv a, jv b, jv c) { \
+  jv_free(c); \
+  jv_free(b); \
+  jv error = jv_string("Error: " #name "/3 not found at build time"); \
+  return ret_error2(input, a, error); \
+}
+
+#define LIBM_DA(name, type) \
+static jv f_ ## name(jq_state *jq, jv input) { \
+  if (jv_get_kind(input) != JV_KIND_NUMBER) { \
+    return type_error(input, "number required"); \
+  } \
+  type value; \
+  double d = name(jv_number_value(input), &value); \
+  jv ret = JV_ARRAY(jv_number(d), jv_number(value)); \
+  jv_free(input); \
+  return ret; \
+}
+#define LIBM_DA_NO(name, type) \
+static jv f_ ## name(jq_state *jq, jv input) { \
+  jv error = jv_string("Error: " #name "/0 not found at build time"); \
+  return ret_error(input, error); \
+}
+
 #include "libm.h"
 #undef LIBM_DDDD_NO
 #undef LIBM_DDD_NO
 #undef LIBM_DD_NO
+#undef LIBM_DA_NO
 #undef LIBM_DDDD
 #undef LIBM_DDD
 #undef LIBM_DD
+#undef LIBM_DA
 
 #ifdef __APPLE__
 #undef gamma
@@ -215,46 +240,11 @@ static jv f_ ## name(jq_state *jq, jv input, jv a, jv b, jv c) { \
 #undef exp10
 #endif
 
-#ifdef HAVE_FREXP
-static jv f_frexp(jq_state *jq, jv input) {
-  if (jv_get_kind(input) != JV_KIND_NUMBER) {
-    return type_error(input, "number required");
-  }
-  int exp;
-  double d = frexp(jv_number_value(input), &exp);
-  jv ret = JV_ARRAY(jv_number(d), jv_number(exp));
-  jv_free(input);
-  return ret;
-}
-#endif
-#ifdef HAVE_MODF
-static jv f_modf(jq_state *jq, jv input) {
-  if (jv_get_kind(input) != JV_KIND_NUMBER) {
-    return type_error(input, "number required");
-  }
-  double i;
-  jv ret = JV_ARRAY(jv_number(modf(jv_number_value(input), &i)));
-  jv_free(input);
-  return jv_array_append(ret, jv_number(i));
-}
-#endif
-#ifdef HAVE_LGAMMA_R
-static jv f_lgamma_r(jq_state *jq, jv input) {
-  if (jv_get_kind(input) != JV_KIND_NUMBER) {
-    return type_error(input, "number required");
-  }
-  int sign;
-  jv ret = JV_ARRAY(jv_number(lgamma_r(jv_number_value(input), &sign)));
-  jv_free(input);
-  return jv_array_append(ret, jv_number(sign));
-}
-#endif
-
 static jv f_negate(jq_state *jq, jv input) {
   if (jv_get_kind(input) != JV_KIND_NUMBER) {
     return type_error(input, "cannot be negated");
   }
-  jv ret = jv_number(-jv_number_value(input));
+  jv ret = jv_number_negate(input);
   jv_free(input);
   return ret;
 }
@@ -292,37 +282,6 @@ static jv f_endswith(jq_state *jq, jv a, jv b) {
   jv_free(a);
   jv_free(b);
   return ret;
-}
-
-static jv f_ltrimstr(jq_state *jq, jv input, jv left) {
-  jv startswith = f_startswith(jq, jv_copy(input), jv_copy(left));
-  if (jv_get_kind(startswith) != JV_KIND_TRUE) {
-    jv_free(startswith);
-    jv_free(left);
-    return input;
-  }
-  /*
-   * FIXME It'd be better to share the suffix with the original input --
-   * that we could do, we just can't share prefixes.
-   */
-  int prefixlen = jv_string_length_bytes(left);
-  jv res = jv_string_sized(jv_string_value(input) + prefixlen,
-                           jv_string_length_bytes(jv_copy(input)) - prefixlen);
-  jv_free(input);
-  return res;
-}
-
-static jv f_rtrimstr(jq_state *jq, jv input, jv right) {
-  jv endswith = f_endswith(jq, jv_copy(input), jv_copy(right));
-  if (jv_get_kind(endswith) == JV_KIND_TRUE) {
-    jv res = jv_string_sized(jv_string_value(input),
-                             jv_string_length_bytes(jv_copy(input)) - jv_string_length_bytes(right));
-    jv_free(input);
-    return res;
-  }
-  jv_free(endswith);
-  jv_free(right);
-  return input;
 }
 
 jv binop_minus(jv a, jv b) {
@@ -369,21 +328,10 @@ jv binop_multiply(jv a, jv b) {
       str = b;
       num = a;
     }
-    jv res;
     double d = jv_number_value(num);
-    if (d < 0 || isnan(d)) {
-      res = jv_null();
-    } else {
-      int n = d;
-      size_t alen = jv_string_length_bytes(jv_copy(str));
-      res = jv_string_empty(alen * n);
-      for (; n > 0; n--) {
-        res = jv_string_append_buf(res, jv_string_value(str), alen);
-      }
-    }
-    jv_free(str);
     jv_free(num);
-    return res;
+    return jv_string_repeat(str,
+        d < 0 || isnan(d) ? -1 : d > INT_MAX ? INT_MAX : (int)d);
   } else if (ak == JV_KIND_OBJECT && bk == JV_KIND_OBJECT) {
     return jv_object_merge_recursive(a, b);
   } else {
@@ -495,13 +443,41 @@ static jv f_tonumber(jq_state *jq, jv input) {
     return input;
   }
   if (jv_get_kind(input) == JV_KIND_STRING) {
-    jv parsed = jv_parse(jv_string_value(input));
-    if (!jv_is_valid(parsed) || jv_get_kind(parsed) == JV_KIND_NUMBER) {
-      jv_free(input);
-      return parsed;
+    const char* s = jv_string_value(input);
+#ifdef USE_DECNUM
+    jv number = jv_number_with_literal(s);
+    if (jv_get_kind(number) == JV_KIND_INVALID) {
+      return type_error(input, "cannot be parsed as a number");
     }
+#else
+    char *end = 0;
+    double d = jvp_strtod(tsd_dtoa_context_get(), s, &end);
+    if (end == 0 || *end != 0) {
+      return type_error(input, "cannot be parsed as a number");
+    }
+    jv number = jv_number(d);
+#endif
+    jv_free(input);
+    return number;
   }
   return type_error(input, "cannot be parsed as a number");
+}
+
+static jv f_toboolean(jq_state *jq, jv input) {
+  if (jv_get_kind(input) == JV_KIND_TRUE || jv_get_kind(input) == JV_KIND_FALSE) {
+    return input;
+  }
+  if (jv_get_kind(input) == JV_KIND_STRING) {
+    const char *s = jv_string_value(input);
+    if (strcmp(s, "true") == 0) {
+      jv_free(input);
+      return jv_true();
+    } else if (strcmp(s, "false") == 0) {
+      jv_free(input);
+      return jv_false();
+    }
+  }
+  return type_error(input, "cannot be parsed as a boolean");
 }
 
 static jv f_length(jq_state *jq, jv input) {
@@ -512,7 +488,7 @@ static jv f_length(jq_state *jq, jv input) {
   } else if (jv_get_kind(input) == JV_KIND_STRING) {
     return jv_number(jv_string_length_codepoints(input));
   } else if (jv_get_kind(input) == JV_KIND_NUMBER) {
-    jv r = jv_number(fabs(jv_number_value(input)));
+    jv r = jv_number_abs(input);
     jv_free(input);
     return r;
   } else if (jv_get_kind(input) == JV_KIND_NULL) {
@@ -675,6 +651,48 @@ static jv f_format(jq_state *jq, jv input, jv fmt) {
     }
     jv_free(input);
     return line;
+  } else if (!strcmp(fmt_s, "urid")) {
+    jv_free(fmt);
+    input = f_tostring(jq, input);
+
+    jv line = jv_string("");
+    const char *errmsg =  "is not a valid uri encoding";
+    const char *s = jv_string_value(input);
+    while (*s) {
+      if (*s != '%') {
+        line = jv_string_append_buf(line, s++, 1);
+      } else {
+        unsigned char unicode[4] = {0};
+        int b = 0;
+        // check leading bits of first octet to determine length of unicode character
+        // (https://datatracker.ietf.org/doc/html/rfc3629#section-3)
+        while (b == 0 || (b < 4 && unicode[0] >> 7 & 1 && unicode[0] >> (7-b) & 1)) {
+          if (*(s++) != '%') {
+            jv_free(line);
+            return type_error(input, errmsg);
+          }
+          for (int i=0; i<2; i++) {
+            unicode[b] <<= 4;
+            char c = *(s++);
+            if ('0' <= c && c <= '9') unicode[b] |= c - '0';
+            else if ('a' <= c && c <= 'f') unicode[b] |= c - 'a' + 10;
+            else if ('A' <= c && c <= 'F') unicode[b] |= c - 'A' + 10;
+            else {
+              jv_free(line);
+              return type_error(input, errmsg);
+            }
+          }
+          b++;
+        }
+        if (!jvp_utf8_is_valid((const char *)unicode, (const char *)unicode+b)) {
+          jv_free(line);
+          return type_error(input, errmsg);
+        }
+        line = jv_string_append_buf(line, (const char *)unicode, b);
+      }
+    }
+    jv_free(input);
+    return line;
   } else if (!strcmp(fmt_s, "sh")) {
     jv_free(fmt);
     if (jv_get_kind(input) != JV_KIND_ARRAY)
@@ -733,9 +751,8 @@ static jv f_format(jq_state *jq, jv input, jv fmt) {
     input = f_tostring(jq, input);
     const unsigned char* data = (const unsigned char*)jv_string_value(input);
     int len = jv_string_length_bytes(jv_copy(input));
-    size_t decoded_len = (3 * len) / 4; // 3 usable bytes for every 4 bytes of input
+    size_t decoded_len = MAX((3 * (size_t)len) / 4, (size_t)1); // 3 usable bytes for every 4 bytes of input
     char *result = jv_mem_calloc(decoded_len, sizeof(char));
-    memset(result, 0, decoded_len * sizeof(char));
     uint32_t ri = 0;
     int input_bytes_read=0;
     uint32_t code = 0;
@@ -811,11 +828,63 @@ static jv f_sort_by_impl(jq_state *jq, jv input, jv keys) {
   }
 }
 
+/*
+ * Assuming the input array is sorted, bsearch/1 returns
+ * the index of the target if the target is in the input array; and otherwise
+ * (-1 - ix), where ix is the insertion point that would leave the array sorted.
+ * If the input is not sorted, bsearch will terminate but with irrelevant results.
+ */
+static jv f_bsearch(jq_state *jq, jv input, jv target) {
+  if (jv_get_kind(input) != JV_KIND_ARRAY) {
+    jv_free(target);
+    return type_error(input, "cannot be searched from");
+  }
+  int start = 0;
+  int end = jv_array_length(jv_copy(input));
+  jv answer = jv_invalid();
+  while (start < end) {
+    int mid = start + (end - start) / 2;
+    int result = jv_cmp(jv_copy(target), jv_array_get(jv_copy(input), mid));
+    if (result == 0) {
+      answer = jv_number(mid);
+      break;
+    } else if (result < 0) {
+      end = mid;
+    } else {
+      start = mid + 1;
+    }
+  }
+  if (!jv_is_valid(answer)) {
+    answer = jv_number(-1 - start);
+  }
+  jv_free(input);
+  jv_free(target);
+  return answer;
+}
+
 static jv f_group_by_impl(jq_state *jq, jv input, jv keys) {
   if (jv_get_kind(input) == JV_KIND_ARRAY &&
       jv_get_kind(keys) == JV_KIND_ARRAY &&
       jv_array_length(jv_copy(input)) == jv_array_length(jv_copy(keys))) {
     return jv_group(input, keys);
+  } else {
+    return type_error2(input, keys, "cannot be sorted, as they are not both arrays");
+  }
+}
+
+static jv f_unique(jq_state *jq, jv input) {
+  if (jv_get_kind(input) == JV_KIND_ARRAY) {
+    return jv_unique(input, jv_copy(input));
+  } else {
+    return type_error(input, "cannot be sorted, as it is not an array");
+  }
+}
+
+static jv f_unique_by_impl(jq_state *jq, jv input, jv keys) {
+  if (jv_get_kind(input) == JV_KIND_ARRAY &&
+      jv_get_kind(keys) == JV_KIND_ARRAY &&
+      jv_array_length(jv_copy(input)) == jv_array_length(jv_copy(keys))) {
+    return jv_unique(input, keys);
   } else {
     return type_error2(input, keys, "cannot be sorted, as they are not both arrays");
   }
@@ -948,8 +1017,13 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
         jv captures = jv_array();
         for (int i = 1; i < region->num_regs; ++i) {
           jv cap = jv_object();
-          cap = jv_object_set(cap, jv_string("offset"), jv_number(idx));
-          cap = jv_object_set(cap, jv_string("string"), jv_string(""));
+          if (region->beg[i] == -1) {
+            cap = jv_object_set(cap, jv_string("offset"), jv_number(-1));
+            cap = jv_object_set(cap, jv_string("string"), jv_null());
+          } else {
+            cap = jv_object_set(cap, jv_string("offset"), jv_number(idx));
+            cap = jv_object_set(cap, jv_string("string"), jv_string(""));
+          }
           cap = jv_object_set(cap, jv_string("length"), jv_number(0));
           cap = jv_object_set(cap, jv_string("name"), jv_null());
           captures = jv_array_append(captures, cap);
@@ -1215,6 +1289,58 @@ static jv f_string_indexes(jq_state *jq, jv a, jv b) {
   return jv_string_indexes(a, b);
 }
 
+enum trim_op {
+  TRIM_LEFT  = 1 << 0,
+  TRIM_RIGHT = 1 << 1
+};
+
+static jv string_trim(jv a, int op) {
+  if (jv_get_kind(a) != JV_KIND_STRING) {
+    return ret_error(a, jv_string("trim input must be a string"));
+  }
+
+  int len = jv_string_length_bytes(jv_copy(a));
+  const char *start = jv_string_value(a);
+  const char *trim_start = start;
+  const char *end = trim_start + len;
+  const char *trim_end = end;
+  int c;
+
+  if (op & TRIM_LEFT) {
+    for (;;) {
+      const char *ns = jvp_utf8_next(trim_start, end, &c);
+      if (!ns || !jvp_codepoint_is_whitespace(c))
+        break;
+      trim_start = ns;
+    }
+  }
+
+  // make sure not empty string or start trim has trimmed everything
+  if ((op & TRIM_RIGHT) && trim_end > trim_start) {
+    for (;;) {
+      const char *ns = jvp_utf8_backtrack(trim_end-1, trim_start, NULL);
+      jvp_utf8_next(ns, trim_end, &c);
+      if (!jvp_codepoint_is_whitespace(c))
+        break;
+      trim_end = ns;
+      if (ns == trim_start)
+        break;
+    }
+  }
+
+  // no new string needed if there is nothing to trim
+  if (trim_start == start && trim_end == end)
+    return a;
+
+  jv ts = jv_string_sized(trim_start, trim_end - trim_start);
+  jv_free(a);
+  return ts;
+}
+
+static jv f_string_trim(jq_state *jq, jv a)  { return string_trim(a, TRIM_LEFT | TRIM_RIGHT); }
+static jv f_string_ltrim(jq_state *jq, jv a) { return string_trim(a, TRIM_LEFT); }
+static jv f_string_rtrim(jq_state *jq, jv a) { return string_trim(a, TRIM_RIGHT); }
+
 static jv f_string_implode(jq_state *jq, jv a) {
   if (jv_get_kind(a) != JV_KIND_ARRAY) {
     return ret_error(a, jv_string("implode input must be an array"));
@@ -1359,8 +1485,10 @@ static time_t my_mktime(struct tm *tm) {
   if (tz != NULL)
     setenv("TZ", "", 1);
   time_t t = mktime(tm);
-  if (tz != NULL)
+  if (tz != NULL) {
     setenv("TZ", tz, 1);
+    free(tz);
+  }
   return t;
 #endif
 }
@@ -1431,16 +1559,11 @@ static jv f_strptime(jq_state *jq, jv a, jv b) {
   memset(&tm, 0, sizeof(tm));
   tm.tm_wday = 8; // sentinel
   tm.tm_yday = 367; // sentinel
+
   const char *input = jv_string_value(a);
   const char *fmt = jv_string_value(b);
-
-#ifndef HAVE_STRPTIME
-  if (strcmp(fmt, "%Y-%m-%dT%H:%M:%SZ")) {
-    return ret_error2(a, b, jv_string("strptime/1 only supports ISO 8601 on this platform"));
-  }
-#endif
   const char *end = strptime(input, fmt, &tm);
-  if (end == NULL || (*end != '\0' && !isspace(*end))) {
+  if (end == NULL || (*end != '\0' && !isspace((unsigned char)*end))) {
     return ret_error2(a, b, jv_string_fmt("date \"%s\" does not match format \"%s\"", input, fmt));
   }
   jv_free(b);
@@ -1464,7 +1587,7 @@ static jv f_strptime(jq_state *jq, jv a, jv b) {
    */
   set_tm_wday(&tm);
   set_tm_yday(&tm);
-#elif defined(WIN32)
+#elif defined(WIN32) || !defined(HAVE_STRPTIME)
   set_tm_wday(&tm);
 #else
   if (tm.tm_wday == 8 && tm.tm_mday != 0 && tm.tm_mon >= 0 && tm.tm_mon <= 11)
@@ -1479,39 +1602,57 @@ static jv f_strptime(jq_state *jq, jv a, jv b) {
   return r;
 }
 
-#define TO_TM_FIELD(t, j, i)                    \
-    do {                                        \
-      jv n = jv_array_get(jv_copy(j), (i));     \
-      if (jv_get_kind(n) != (JV_KIND_NUMBER)) { \
-        jv_free(n);                             \
-        jv_free(j);                             \
-        return 0;                               \
-      }                                         \
-      t = jv_number_value(n);                   \
-      jv_free(n);                               \
-    } while (0)
-
-static int jv2tm(jv a, struct tm *tm) {
+static int jv2tm(jv a, struct tm *tm, int localtime) {
   memset(tm, 0, sizeof(*tm));
-  TO_TM_FIELD(tm->tm_year, a, 0);
-  tm->tm_year -= 1900;
-  TO_TM_FIELD(tm->tm_mon,  a, 1);
-  TO_TM_FIELD(tm->tm_mday, a, 2);
-  TO_TM_FIELD(tm->tm_hour, a, 3);
-  TO_TM_FIELD(tm->tm_min,  a, 4);
-  TO_TM_FIELD(tm->tm_sec,  a, 5);
-  TO_TM_FIELD(tm->tm_wday, a, 6);
-  TO_TM_FIELD(tm->tm_yday, a, 7);
+  static const size_t offsets[] = {
+    offsetof(struct tm, tm_year),
+    offsetof(struct tm, tm_mon),
+    offsetof(struct tm, tm_mday),
+    offsetof(struct tm, tm_hour),
+    offsetof(struct tm, tm_min),
+    offsetof(struct tm, tm_sec),
+    offsetof(struct tm, tm_wday),
+    offsetof(struct tm, tm_yday),
+  };
+
+  for (size_t i = 0; i < (sizeof offsets / sizeof *offsets); ++i) {
+    jv n = jv_array_get(jv_copy(a), i);
+    if (!jv_is_valid(n))
+      break;
+    if (jv_get_kind(n) != JV_KIND_NUMBER || jvp_number_is_nan(n)) {
+      jv_free(a);
+      jv_free(n);
+      return 0;
+    }
+    double d = jv_number_value(n);
+    if (i == 0) /* year */
+      d -= 1900;
+    *(int *)((void *)tm + offsets[i]) = d < INT_MIN ? INT_MIN :
+                                        d > INT_MAX ? INT_MAX : (int)d;
+    jv_free(n);
+  }
+
+  if (localtime) {
+    tm->tm_isdst = -1;
+    mktime(tm);
+  } else {
+#ifdef HAVE_TIMEGM
+    timegm(tm);
+#elif HAVE_TM_TM_GMT_OFF
+    // tm->tm_gmtoff = 0;
+    tm->tm_zone = "GMT";
+#elif HAVE_TM___TM_GMT_OFF
+    // tm->__tm_gmtoff = 0;
+    tm->__tm_zone = "GMT";
+#endif
+    // tm->tm_isdst = 0;
+
+    // The standard permits the tm structure to contain additional members. We
+    // hope it is okay to initialize them to zero, because the standard does not
+    // provide an alternative.
+  }
+
   jv_free(a);
-
-  // We use UTC everywhere (gettimeofday, gmtime) and UTC does not do DST.
-  // Setting tm_isdst to 0 is done by the memset.
-  // tm->tm_isdst = 0;
-
-  // The standard permits the tm structure to contain additional members. We
-  // hope it is okay to initialize them to zero, because the standard does not
-  // provide an alternative.
-
   return 1;
 }
 
@@ -1520,10 +1661,8 @@ static int jv2tm(jv a, struct tm *tm) {
 static jv f_mktime(jq_state *jq, jv a) {
   if (jv_get_kind(a) != JV_KIND_ARRAY)
     return ret_error(a, jv_string("mktime requires array inputs"));
-  if (jv_array_length(jv_copy(a)) < 6)
-    return ret_error(a, jv_string("mktime requires parsed datetime inputs"));
   struct tm tm;
-  if (!jv2tm(a, &tm))
+  if (!jv2tm(a, &tm, 0))
     return jv_invalid_with_msg(jv_string("mktime requires parsed datetime inputs"));
   time_t t = my_mktime(&tm);
   if (t == (time_t)-1)
@@ -1617,22 +1756,42 @@ static jv f_strftime(jq_state *jq, jv a, jv b) {
     }
   } else if (jv_get_kind(a) != JV_KIND_ARRAY) {
     return ret_error2(a, b, jv_string("strftime/1 requires parsed datetime inputs"));
-  } else if (jv_get_kind(b) != JV_KIND_STRING) {
-    return ret_error2(a, b, jv_string("strftime/1 requires a string format"));
   }
+  if (jv_get_kind(b) != JV_KIND_STRING)
+    return ret_error2(a, b, jv_string("strftime/1 requires a string format"));
   struct tm tm;
-  if (!jv2tm(a, &tm))
+  if (!jv2tm(a, &tm, 0))
     return ret_error(b, jv_string("strftime/1 requires parsed datetime inputs"));
 
   const char *fmt = jv_string_value(b);
-  size_t alloced = strlen(fmt) + 100;
-  char *buf = alloca(alloced);
-  size_t n = strftime(buf, alloced, fmt, &tm);
+  int fmt_not_empty = *fmt != '\0';
+  size_t max_size = strlen(fmt) + 100;
+  char *buf = jv_mem_alloc(max_size);
+#ifdef __APPLE__
+  /* Apple Libc (as of version 1669.40.2) contains a bug which causes it to
+   * ignore the `tm.tm_gmtoff` in favor of the global timezone. To print the
+   * proper timezone offset we temporarily switch the TZ to UTC. */
+  char *tz = (tz = getenv("TZ")) != NULL ? strdup(tz) : NULL;
+  setenv("TZ", "UTC", 1);
+#endif
+  size_t n = strftime(buf, max_size, fmt, &tm);
+#ifdef __APPLE__
+  if (tz) {
+    setenv("TZ", tz, 1);
+    free(tz);
+  } else {
+    unsetenv("TZ");
+  }
+#endif
   jv_free(b);
   /* POSIX doesn't provide errno values for strftime() failures; weird */
-  if (n == 0 || n > alloced)
+  if ((n == 0 && fmt_not_empty) || n > max_size) {
+    free(buf);
     return jv_invalid_with_msg(jv_string("strftime/1: unknown system failure"));
-  return jv_string(buf);
+  }
+  jv ret = jv_string_sized(buf, n);
+  free(buf);
+  return ret;
 }
 #else
 static jv f_strftime(jq_state *jq, jv a, jv b) {
@@ -1648,21 +1807,26 @@ static jv f_strflocaltime(jq_state *jq, jv a, jv b) {
     a = f_localtime(jq, a);
   } else if (jv_get_kind(a) != JV_KIND_ARRAY) {
     return ret_error2(a, b, jv_string("strflocaltime/1 requires parsed datetime inputs"));
-  } else if (jv_get_kind(b) != JV_KIND_STRING) {
-    return ret_error2(a, b, jv_string("strflocaltime/1 requires a string format"));
   }
+  if (jv_get_kind(b) != JV_KIND_STRING)
+    return ret_error2(a, b, jv_string("strflocaltime/1 requires a string format"));
   struct tm tm;
-  if (!jv2tm(a, &tm))
+  if (!jv2tm(a, &tm, 1))
     return ret_error(b, jv_string("strflocaltime/1 requires parsed datetime inputs"));
   const char *fmt = jv_string_value(b);
-  size_t alloced = strlen(fmt) + 100;
-  char *buf = alloca(alloced);
-  size_t n = strftime(buf, alloced, fmt, &tm);
+  int fmt_not_empty = *fmt != '\0';
+  size_t max_size = strlen(fmt) + 100;
+  char *buf = jv_mem_alloc(max_size);
+  size_t n = strftime(buf, max_size, fmt, &tm);
   jv_free(b);
   /* POSIX doesn't provide errno values for strftime() failures; weird */
-  if (n == 0 || n > alloced)
+  if ((n == 0 && fmt_not_empty) || n > max_size) {
+    free(buf);
     return jv_invalid_with_msg(jv_string("strflocaltime/1: unknown system failure"));
-  return jv_string(buf);
+  }
+  jv ret = jv_string_sized(buf, n);
+  free(buf);
+  return ret;
 }
 #else
 static jv f_strflocaltime(jq_state *jq, jv a, jv b) {
@@ -1701,96 +1865,137 @@ static jv f_current_line(jq_state *jq, jv a) {
   return jq_util_input_get_current_line(jq);
 }
 
+static jv f_have_decnum(jq_state *jq, jv a) {
+  jv_free(a);
+#ifdef USE_DECNUM
+  return jv_true();
+#else
+  return jv_false();
+#endif
+}
+
+#define CFUNC(func, name, arity) \
+  {.fptr = { .a ## arity = func }, name, arity}
+
 #define LIBM_DD(name) \
-  {f_ ## name,  #name, 1},
-#define LIBM_DD_NO(name)
+  CFUNC(f_ ## name, #name, 1),
+#define LIBM_DD_NO(name) LIBM_DD(name)
+#define LIBM_DA(name, type) LIBM_DD(name)
+#define LIBM_DA_NO(name, type) LIBM_DD(name)
 
 #define LIBM_DDD(name) \
-  {f_ ## name, #name, 3},
-#define LIBM_DDD_NO(name)
+  CFUNC(f_ ## name, #name, 3),
+#define LIBM_DDD_NO(name) LIBM_DDD(name)
 
 #define LIBM_DDDD(name) \
-  {f_ ## name, #name, 4},
-#define LIBM_DDDD_NO(name)
+  CFUNC(f_ ## name, #name, 4),
+#define LIBM_DDDD_NO(name) LIBM_DDDD(name)
 
 static const struct cfunction function_list[] = {
 #include "libm.h"
-#ifdef HAVE_FREXP
-  {f_frexp,"frexp", 1},
-#endif
-#ifdef HAVE_MODF
-  {f_modf,"modf", 1},
-#endif
-#ifdef HAVE_LGAMMA_R
-  {f_lgamma_r,"lgamma_r", 1},
-#endif
-  {f_negate, "_negate", 1},
-#define BINOP(name) {f_ ## name, "_" #name, 3},
+  CFUNC(f_negate, "_negate", 1),
+#define BINOP(name) CFUNC(f_ ## name, "_" #name, 3),
 BINOPS
 #undef BINOP
-  {f_dump, "tojson", 1},
-  {f_json_parse, "fromjson", 1},
-  {f_tonumber, "tonumber", 1},
-  {f_tostring, "tostring", 1},
-  {f_keys, "keys", 1},
-  {f_keys_unsorted, "keys_unsorted", 1},
-  {f_startswith, "startswith", 2},
-  {f_endswith, "endswith", 2},
-  {f_ltrimstr, "ltrimstr", 2},
-  {f_rtrimstr, "rtrimstr", 2},
-  {f_string_split, "split", 2},
-  {f_string_explode, "explode", 1},
-  {f_string_implode, "implode", 1},
-  {f_string_indexes, "_strindices", 2},
-  {f_setpath, "setpath", 3}, // FIXME typechecking
-  {f_getpath, "getpath", 2},
-  {f_delpaths, "delpaths", 2},
-  {f_has, "has", 2},
-  {f_contains, "contains", 2},
-  {f_length, "length", 1},
-  {f_utf8bytelength, "utf8bytelength", 1},
-  {f_type, "type", 1},
-  {f_isinfinite, "isinfinite", 1},
-  {f_isnan, "isnan", 1},
-  {f_isnormal, "isnormal", 1},
-  {f_infinite, "infinite", 1},
-  {f_nan, "nan", 1},
-  {f_sort, "sort", 1},
-  {f_sort_by_impl, "_sort_by_impl", 2},
-  {f_group_by_impl, "_group_by_impl", 2},
-  {f_min, "min", 1},
-  {f_max, "max", 1},
-  {f_min_by_impl, "_min_by_impl", 2},
-  {f_max_by_impl, "_max_by_impl", 2},
-  {f_error, "error", 1},
-  {f_format, "format", 2},
-  {f_env, "env", 1},
-  {f_halt, "halt", 1},
-  {f_halt_error, "halt_error", 2},
-  {f_get_search_list, "get_search_list", 1},
-  {f_get_prog_origin, "get_prog_origin", 1},
-  {f_get_jq_origin, "get_jq_origin", 1},
-  {f_match, "_match_impl", 4},
-  {f_modulemeta, "modulemeta", 1},
-  {f_input, "input", 1},
-  {f_debug, "debug", 1},
-  {f_stderr, "stderr", 1},
-  {f_strptime, "strptime", 2},
-  {f_strftime, "strftime", 2},
-  {f_strflocaltime, "strflocaltime", 2},
-  {f_mktime, "mktime", 1},
-  {f_gmtime, "gmtime", 1},
-  {f_localtime, "localtime", 1},
-  {f_now, "now", 1},
-  {f_current_filename, "input_filename", 1},
-  {f_current_line, "input_line_number", 1},
+  CFUNC(f_dump, "tojson", 1),
+  CFUNC(f_json_parse, "fromjson", 1),
+  CFUNC(f_tonumber, "tonumber", 1),
+  CFUNC(f_toboolean, "toboolean", 1),
+  CFUNC(f_tostring, "tostring", 1),
+  CFUNC(f_keys, "keys", 1),
+  CFUNC(f_keys_unsorted, "keys_unsorted", 1),
+  CFUNC(f_startswith, "startswith", 2),
+  CFUNC(f_endswith, "endswith", 2),
+  CFUNC(f_string_split, "split", 2),
+  CFUNC(f_string_explode, "explode", 1),
+  CFUNC(f_string_implode, "implode", 1),
+  CFUNC(f_string_indexes, "_strindices", 2),
+  CFUNC(f_string_trim, "trim", 1),
+  CFUNC(f_string_ltrim, "ltrim", 1),
+  CFUNC(f_string_rtrim, "rtrim", 1),
+  CFUNC(f_setpath, "setpath", 3),
+  CFUNC(f_getpath, "getpath", 2),
+  CFUNC(f_delpaths, "delpaths", 2),
+  CFUNC(f_has, "has", 2),
+  CFUNC(f_contains, "contains", 2),
+  CFUNC(f_length, "length", 1),
+  CFUNC(f_utf8bytelength, "utf8bytelength", 1),
+  CFUNC(f_type, "type", 1),
+  CFUNC(f_isinfinite, "isinfinite", 1),
+  CFUNC(f_isnan, "isnan", 1),
+  CFUNC(f_isnormal, "isnormal", 1),
+  CFUNC(f_infinite, "infinite", 1),
+  CFUNC(f_nan, "nan", 1),
+  CFUNC(f_sort, "sort", 1),
+  CFUNC(f_sort_by_impl, "_sort_by_impl", 2),
+  CFUNC(f_group_by_impl, "_group_by_impl", 2),
+  CFUNC(f_unique, "unique", 1),
+  CFUNC(f_unique_by_impl, "_unique_by_impl", 2),
+  CFUNC(f_bsearch, "bsearch", 2),
+  CFUNC(f_min, "min", 1),
+  CFUNC(f_max, "max", 1),
+  CFUNC(f_min_by_impl, "_min_by_impl", 2),
+  CFUNC(f_max_by_impl, "_max_by_impl", 2),
+  CFUNC(f_error, "error", 1),
+  CFUNC(f_format, "format", 2),
+  CFUNC(f_env, "env", 1),
+  CFUNC(f_halt, "halt", 1),
+  CFUNC(f_halt_error, "halt_error", 2),
+  CFUNC(f_get_search_list, "get_search_list", 1),
+  CFUNC(f_get_prog_origin, "get_prog_origin", 1),
+  CFUNC(f_get_jq_origin, "get_jq_origin", 1),
+  CFUNC(f_match, "_match_impl", 4),
+  CFUNC(f_modulemeta, "modulemeta", 1),
+  CFUNC(f_input, "input", 1),
+  CFUNC(f_debug, "debug", 1),
+  CFUNC(f_stderr, "stderr", 1),
+  CFUNC(f_strptime, "strptime", 2),
+  CFUNC(f_strftime, "strftime", 2),
+  CFUNC(f_strflocaltime, "strflocaltime", 2),
+  CFUNC(f_mktime, "mktime", 1),
+  CFUNC(f_gmtime, "gmtime", 1),
+  CFUNC(f_localtime, "localtime", 1),
+  CFUNC(f_now, "now", 1),
+  CFUNC(f_current_filename, "input_filename", 1),
+  CFUNC(f_current_line, "input_line_number", 1),
+  CFUNC(f_have_decnum, "have_decnum", 1),
+  CFUNC(f_have_decnum, "have_literal_numbers", 1),
 };
 #undef LIBM_DDDD_NO
 #undef LIBM_DDD_NO
 #undef LIBM_DD_NO
+#undef LIBM_DA_NO
 #undef LIBM_DDDD
 #undef LIBM_DDD
 #undef LIBM_DD
+#undef LIBM_DA
+
+// This is a hack to make last(g) yield no output values,
+// if g yields no output values, without using boxing.
+static block gen_last_1(void) {
+  block last_var = gen_op_var_fresh(STOREV, "last");
+  block is_empty_var = gen_op_var_fresh(STOREV, "is_empty");
+  block init = BLOCK(gen_op_simple(DUP),
+                     gen_const(jv_null()),
+                     last_var,
+                     gen_op_simple(DUP),
+                     gen_const(jv_true()),
+                     is_empty_var);
+  block call_arg = BLOCK(gen_call("arg", gen_noop()),
+                         gen_op_simple(DUP),
+                         gen_op_bound(STOREV, last_var),
+                         gen_const(jv_false()),
+                         gen_op_bound(STOREV, is_empty_var),
+                         gen_op_simple(BACKTRACK));
+  block if_empty = gen_op_simple(BACKTRACK);
+  return BLOCK(init,
+               gen_op_target(FORK, call_arg),
+               call_arg,
+               BLOCK(gen_op_bound(LOADVN, is_empty_var),
+                     gen_op_target(JUMP_F, if_empty),
+                     if_empty,
+                     gen_op_bound(LOADVN, last_var)));
+}
 
 struct bytecoded_builtin { const char* name; block code; };
 static block bind_bytecoded_builtins(block b) {
@@ -1811,6 +2016,7 @@ static block bind_bytecoded_builtins(block b) {
       {"path", BLOCK(gen_op_simple(PATH_BEGIN),
                      gen_call("arg", gen_noop()),
                      gen_op_simple(PATH_END))},
+      {"last", gen_last_1()},
     };
     for (unsigned i=0; i<sizeof(builtin_def_1arg)/sizeof(builtin_def_1arg[0]); i++) {
       builtins = BLOCK(builtins, gen_function(builtin_def_1arg[i].name,
@@ -1838,42 +2044,11 @@ static block bind_bytecoded_builtins(block b) {
   return BLOCK(builtins, b);
 }
 
-static const char jq_builtins[] =
+static const char jq_builtins[] = {
 /* Include jq-coded builtins */
 #include "src/builtin.inc"
-
-/* Include unsupported math functions next */
-#define LIBM_DD(name)
-#define LIBM_DDD(name)
-#define LIBM_DDDD(name)
-#define LIBM_DD_NO(name) "def " #name ": \"Error: " #name "/0 not found at build time\"|error;"
-#define LIBM_DDD_NO(name) "def " #name "(a;b): \"Error: " #name "/2 not found at build time\"|error;"
-#define LIBM_DDDD_NO(name) "def " #name "(a;b;c): \"Error: " #name "/3 not found at build time\"|error;"
-#include "libm.h"
-#ifndef HAVE_FREXP
-  "def frexp: \"Error: frexp/0 not found at build time\"|error;"
-#endif
-#ifndef HAVE_MODF
-  "def modf: \"Error: modf/0 not found at build time\"|error;"
-#endif
-#ifndef HAVE_LGAMMA_R
-  "def lgamma_r: \"Error: lgamma_r/0 not found at build time\"|error;"
-#endif
-;
-
-#undef LIBM_DDDD_NO
-#undef LIBM_DDD_NO
-#undef LIBM_DD_NO
-#undef LIBM_DDDD
-#undef LIBM_DDD
-#undef LIBM_DD
-
-#ifdef __APPLE__
-#undef HAVE_GAMMA
-#undef HAVE_EXP10
-#undef HAVE_DREM
-#undef HAVE_SIGNIFICAND
-#endif
+  '\0',
+};
 
 static block gen_builtin_list(block builtins) {
   jv list = jv_array_append(block_list_funcs(builtins, 1), jv_string("builtins/0"));
