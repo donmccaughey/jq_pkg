@@ -9,6 +9,9 @@ revision := 1
 archs := arm64 x86_64
 
 rev := $(if $(patsubst 1,,$(revision)),-r$(revision),)
+tag := v$(version)-r$(revision)
+tag-message := A signed and notarized universal installer package for \`jq\` $(version), built with oniguruma $(oniguruma_version).
+tag-title := jq $(version) for macOS rev $(revision)
 ver := $(version)$(rev)
 
 
@@ -199,10 +202,9 @@ $(TMP)/build-report.txt : | $$(dir $$@)
 	printf 'NOTARIZATION_KEYCHAIN_PROFILE: %s\n' "$(NOTARIZATION_KEYCHAIN_PROFILE)" >> $@
 	printf 'TMP directory: %s\n' "$(TMP)" >> $@
 	printf 'CFLAGS: %s\n' "$(CFLAGS)" >> $@
-	printf 'Tag: v%s-r%s\n' "$(version)" "$(revision)" >> $@
-	printf 'Tag Title: jq %s for macOS rev %s\n' "$(version)" "$(revision)" >> $@
-	printf 'Tag Message: A signed and notarized universal installer package for `jq` %s, built with `oniguruma` %s.\n' \
-		"$(version)" "$(oniguruma_version)" >> $@
+	printf 'Tag: %s\n' "$(tag)" >> $@
+	printf 'Tag Title: %s\n' "$(tag-title)" >> $@
+	printf 'Tag Message: %s\n' "$(tag-message)" >> $@
 
 $(TMP)/distribution.xml \
 $(TMP)/resources/welcome.html : $(TMP)/% : % | $$(dir $$@)
@@ -249,4 +251,3 @@ $(TMP)/notarized.stamp.txt : $(TMP)/notarization-log.json | $$(dir $$@)
 jq-$(ver).pkg : $(TMP)/jq-$(ver)-unnotarized.pkg $(TMP)/notarized.stamp.txt
 	cp $< $@
 	xcrun stapler staple $@
-
