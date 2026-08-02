@@ -41,9 +41,14 @@ src/lexer.h: src/lexer.c
 else
 BUILT_SOURCES = src/builtin.inc src/config_opts.inc src/version.h
 .y.c:
-	$(AM_V_YACC) echo "NOT building parser.c!"
+	$(AM_V_YACC) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(@F) $@
+	$(AM_V_YACC) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(*F).h $*.h
+	$(AM_V_YACC) touch $@ $*.h
+
 .l.c:
-	$(AM_V_LEX) echo "NOT building lexer.c!"
+	$(AM_V_LEX) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(@F) $@
+	$(AM_V_LEX) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(*F).h $*.h
+	$(AM_V_LEX) touch $@ $*.h
 endif
 
 # Tell YACC (Bison) autoconf macros that you want a header file created.
@@ -227,11 +232,13 @@ EXTRA_DIST = $(DOC_FILES) $(man_MANS) $(TESTS) $(TEST_LOG_COMPILER)     \
         tests/modules/test_bind_order0.jq                               \
         tests/modules/test_bind_order1.jq                               \
         tests/modules/test_bind_order2.jq                               \
+        tests/modules/cycle_a.jq tests/modules/cycle_b.jq               \
+        tests/modules/cycle_self.jq                                     \
         tests/onig.supp tests/local.supp                                \
         tests/setup tests/torture/input0.json                           \
         tests/optional.test tests/man.test tests/manonig.test           \
         tests/jq.test tests/onig.test tests/base64.test tests/uri.test  \
-        tests/utf8-truncate.jq tests/jq-f-test.sh                       \
+        tests/jq-f-test.sh                                              \
         tests/no-main-program.jq tests/yes-main-program.jq
 
 AM_DISTCHECK_CONFIGURE_FLAGS=--with-oniguruma=builtin

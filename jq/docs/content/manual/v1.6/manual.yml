@@ -229,9 +229,9 @@ sections:
 
       * `--rawfile variable-name filename`:
 
-        This option reads in the named file and binds its contents to the given
+        This option reads in the named file and binds its content to the given
         global variable.  If you run jq with `--rawfile foo bar`, then `$foo` is
-        available in the program and has a string whose contents are to the texts
+        available in the program and has a string whose content is set to the text
         in the file named `bar`.
 
       * `--argfile variable-name filename`:
@@ -2926,7 +2926,7 @@ sections:
       output as JSON texts on `stdout`.)  The `debug` builtin can have
       application-specific behavior, such as for executables that use
       the libjq C API but aren't the jq executable itself.  The `stderr`
-      builtin outputs its input in raw mode to stder with no additional
+      builtin outputs its input in raw mode to stderr with no additional
       decoration, not even a newline.
 
       Most jq builtins are referentially transparent, and yield constant

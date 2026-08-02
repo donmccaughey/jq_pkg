@@ -164,7 +164,7 @@ int yylex(YYSTYPE* yylval, YYLTYPE* yylloc, block* answer, int* errors,
  * object key. */
 static jv check_object_key(block k) {
   if (block_is_const(k) && block_const_kind(k) != JV_KIND_STRING) {
-    char errbuf[15];
+    char errbuf[30];
     return jv_string_fmt("Cannot use %s (%s) as object key",
         jv_kind_name(block_const_kind(k)),
         jv_dump_string_trunc(block_const(k), errbuf, sizeof(errbuf)));
@@ -439,26 +439,16 @@ ImportWhat Query ';' {
 
 ImportWhat:
 "import" ImportFrom "as" BINDING {
-  jv v = block_const($2);
-  // XXX Make gen_import take only blocks and the int is_data so we
-  // don't have to free so much stuff here
-  $$ = gen_import(jv_string_value(v), jv_string_value($4), 1);
+  $$ = gen_import(block_const($2), $4, 1);
   block_free($2);
-  jv_free($4);
-  jv_free(v);
 } |
 "import" ImportFrom "as" IDENT {
-  jv v = block_const($2);
-  $$ = gen_import(jv_string_value(v), jv_string_value($4), 0);
+  $$ = gen_import(block_const($2), $4, 0);
   block_free($2);
-  jv_free($4);
-  jv_free(v);
 } |
 "include" ImportFrom {
-  jv v = block_const($2);
-  $$ = gen_import(jv_string_value(v), NULL, 0);
+  $$ = gen_import(block_const($2), jv_invalid(), 0);
   block_free($2);
-  jv_free(v);
 }
 
 ImportFrom:

@@ -601,7 +601,9 @@ LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LIB__isatty = @LIB__isatty@
+LIB_arc4random = @LIB_arc4random@
 LIB_atexit = @LIB_atexit@
+LIB_getentropy = @LIB_getentropy@
 LIB_gettimeofday = @LIB_gettimeofday@
 LIB_gmtime = @LIB_gmtime@
 LIB_gmtime_r = @LIB_gmtime_r@
@@ -800,11 +802,13 @@ EXTRA_DIST = $(DOC_FILES) $(man_MANS) $(TESTS) $(TEST_LOG_COMPILER)     \
         tests/modules/test_bind_order0.jq                               \
         tests/modules/test_bind_order1.jq                               \
         tests/modules/test_bind_order2.jq                               \
+        tests/modules/cycle_a.jq tests/modules/cycle_b.jq               \
+        tests/modules/cycle_self.jq                                     \
         tests/onig.supp tests/local.supp                                \
         tests/setup tests/torture/input0.json                           \
         tests/optional.test tests/man.test tests/manonig.test           \
         tests/jq.test tests/onig.test tests/base64.test tests/uri.test  \
-        tests/utf8-truncate.jq tests/jq-f-test.sh                       \
+        tests/jq-f-test.sh                                              \
         tests/no-main-program.jq tests/yes-main-program.jq
 
 AM_DISTCHECK_CONFIGURE_FLAGS = --with-oniguruma=builtin
@@ -1911,9 +1915,14 @@ uninstall-man: uninstall-man1
 @MAINTAINER_MODE_TRUE@	$(AM_V_LEX) flex -o src/lexer.c --header-file=src/lexer.h $<
 @MAINTAINER_MODE_TRUE@src/lexer.h: src/lexer.c
 @MAINTAINER_MODE_FALSE@.y.c:
-@MAINTAINER_MODE_FALSE@	$(AM_V_YACC) echo "NOT building parser.c!"
+@MAINTAINER_MODE_FALSE@	$(AM_V_YACC) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(@F) $@
+@MAINTAINER_MODE_FALSE@	$(AM_V_YACC) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(*F).h $*.h
+@MAINTAINER_MODE_FALSE@	$(AM_V_YACC) touch $@ $*.h
+
 @MAINTAINER_MODE_FALSE@.l.c:
-@MAINTAINER_MODE_FALSE@	$(AM_V_LEX) echo "NOT building lexer.c!"
+@MAINTAINER_MODE_FALSE@	$(AM_V_LEX) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(@F) $@
+@MAINTAINER_MODE_FALSE@	$(AM_V_LEX) [ "$(<D)" = "$(@D)" ] || cp $(<D)/$(*F).h $*.h
+@MAINTAINER_MODE_FALSE@	$(AM_V_LEX) touch $@ $*.h
 
 ### Building the jq binary
 

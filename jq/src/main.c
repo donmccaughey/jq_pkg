@@ -118,7 +118,7 @@ static void usage(int code, int keep_it_short) {
 
 static void die(void) {
   fprintf(stderr, "Use jq --help for help with command-line options,\n");
-  fprintf(stderr, "or see the jq manpage, or online docs  at https://jqlang.org\n");
+  fprintf(stderr, "or see the jq manpage, or online docs at https://jqlang.org\n");
   exit(2);
 }
 
@@ -607,6 +607,15 @@ int main(int argc, char* argv[]) {
     if (!jv_is_valid(data)) {
       data = jv_invalid_get_msg(data);
       fprintf(stderr, "jq: %s\n", jv_string_value(data));
+      free(program_origin);
+      jv_free(data);
+      ret = JQ_ERROR_SYSTEM;
+      goto out;
+    }
+    int len = jv_string_length_bytes(jv_copy(data));
+    if ((size_t)len != strlen(jv_string_value(data))) {
+      fprintf(stderr, "jq: program file contains NUL bytes\n");
+      free(program_origin);
       jv_free(data);
       ret = JQ_ERROR_SYSTEM;
       goto out;

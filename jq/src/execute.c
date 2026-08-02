@@ -10,13 +10,10 @@
 #include "bytecode.h"
 
 #include "jv_alloc.h"
-#include "jq_parser.h"
 #include "locfile.h"
 #include "jv.h"
 #include "jq.h"
-#include "parser.h"
 #include "builtin.h"
-#include "util.h"
 #include "linker.h"
 
 struct jq_state {
@@ -499,10 +496,11 @@ jv jq_next(jq_state *jq) {
         stack_push(jq, jv_object_set(objv, k, v));
         stack_push(jq, stktop);
       } else {
-        char errbuf[15];
-        set_error(jq, jv_invalid_with_msg(jv_string_fmt("Cannot use %s (%s) as object key",
-                                                        jv_kind_name(jv_get_kind(k)),
-                                                        jv_dump_string_trunc(jv_copy(k), errbuf, sizeof(errbuf)))));
+        char errbuf[30];
+        set_error(jq, jv_invalid_with_msg(jv_string_fmt(
+                "Cannot use %s (%s) as object key",
+                jv_kind_name(jv_get_kind(k)),
+                jv_dump_string_trunc(jv_copy(k), errbuf, sizeof(errbuf)))));
         jv_free(stktop);
         jv_free(v);
         jv_free(k);
@@ -685,7 +683,7 @@ jv jq_next(jq_state *jq) {
       jv k = stack_pop(jq);
       // detect invalid path expression like path(reverse | .a)
       if (!path_intact(jq, jv_copy(t))) {
-        char keybuf[15];
+        char keybuf[30];
         char objbuf[30];
         jv msg = jv_string_fmt(
             "Invalid path expression near attempt to access element %s of %s",
@@ -771,11 +769,11 @@ jv jq_next(jq_state *jq) {
       } else {
         assert(opcode == EACH || opcode == EACH_OPT);
         if (opcode == EACH) {
-          char errbuf[15];
-          set_error(jq,
-                    jv_invalid_with_msg(jv_string_fmt("Cannot iterate over %s (%s)",
-                                                      jv_kind_name(jv_get_kind(container)),
-                                                      jv_dump_string_trunc(jv_copy(container), errbuf, sizeof(errbuf)))));
+          char errbuf[30];
+          set_error(jq, jv_invalid_with_msg(jv_string_fmt(
+                  "Cannot iterate over %s (%s)",
+                  jv_kind_name(jv_get_kind(container)),
+                  jv_dump_string_trunc(jv_copy(container), errbuf, sizeof(errbuf)))));
         }
         keep_going = 0;
       }
@@ -924,6 +922,8 @@ jv jq_next(jq_state *jq) {
       if (!jv_is_valid(top)) {
         if (jv_invalid_has_msg(jv_copy(top)))
           set_error(jq, top);
+        else
+          jv_free(top);
         goto do_backtrack;
       }
 
@@ -1022,12 +1022,19 @@ jv jq_format_error(jv msg) {
   // Invalid with msg; prefix with "jq: error: "
 
   if (jv_get_kind(msg) != JV_KIND_INVALID) {
-    if (jv_get_kind(msg) == JV_KIND_STRING)
-      return jv_string_fmt("jq: error: %s", jv_string_value(msg));
+    if (jv_get_kind(msg) == JV_KIND_STRING) {
+      jv r = jv_string_fmt("jq: error: %s", jv_string_value(msg));
+      jv_free(msg);
+      return r;
+    }
 
     msg = jv_dump_string(msg, JV_PRINT_INVALID);
-    if (jv_get_kind(msg) == JV_KIND_STRING)
-      return jv_string_fmt("jq: error: %s", jv_string_value(msg));
+    if (jv_get_kind(msg) == JV_KIND_STRING) {
+      jv r = jv_string_fmt("jq: error: %s", jv_string_value(msg));
+      jv_free(msg);
+      return r;
+    }
+    jv_free(msg);
     return jq_format_error(jv_null());  // ENOMEM
   }
 
@@ -1215,7 +1222,7 @@ args2obj(jv args)
   jv kk = jv_string("name");
   jv vk = jv_string("value");
   jv_array_foreach(args, i, v)
-    r = jv_object_set(r, jv_object_get(jv_copy(v), kk), jv_object_get(v, vk));
+    r = jv_object_set(r, jv_object_get(jv_copy(v), jv_copy(kk)), jv_object_get(v, jv_copy(vk)));
   jv_free(args);
   jv_free(kk);
   jv_free(vk);
@@ -1236,9 +1243,10 @@ int jq_compile_args(jq_state *jq, const char* str, jv args) {
   int nerrors = load_program(jq, locations, &program);
   if (nerrors == 0) {
     nerrors = builtins_bind(jq, &program);
-    if (nerrors == 0) {
+    if (nerrors == 0)
       nerrors = block_compile(program, &jq->bc, locations, args2obj(args));
-    }
+    else
+      jv_free(args);
   } else
     jv_free(args);
   if (nerrors)

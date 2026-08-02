@@ -3,7 +3,7 @@ INSTALLER_SIGNING_ID ?= Developer ID Installer: Donald McCaughey
 NOTARIZATION_KEYCHAIN_PROFILE ?= Donald McCaughey
 TMP ?= $(abspath tmp)
 
-version := 1.8.1
+version := 1.8.2
 oniguruma_version := 6.9.10
 revision := 1
 archs := arm64 x86_64
@@ -264,7 +264,7 @@ $(TMP)/checked-package.stamp.txt : jq-$(ver).pkg
 $(TMP)/tagged.stamp.txt : $(TMP)/checked-package.stamp.txt
 		git diff --quiet && git diff --cached --quiet
 		git tag \
-		    --annotate $(tag) \
+			--annotate $(tag) \
 			--message="$(tag-title)" \
 			--message="$$(echo "$(tag-message)" | fold -s)"
 		git push origin $(tag)
@@ -272,7 +272,7 @@ $(TMP)/tagged.stamp.txt : $(TMP)/checked-package.stamp.txt
 
 $(TMP)/released.stamp.txt : $(TMP)/tagged.stamp.txt
 		gh release create $(tag) \
-		    jq-$(ver).pkg \
+			jq-$(ver).pkg \
 			--draft \
 			--notes "$(tag-message)" \
 			--title "$(tag-title)"

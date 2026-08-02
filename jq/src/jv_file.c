@@ -42,21 +42,23 @@ jv jv_load_file(const char* filename, int raw) {
   // To avoid mangling UTF-8 multi-byte sequences that cross the end of our read
   // buffer, we need to be able to read the remainder of a sequence and add that
   // before appending.
-  const int max_utf8_len = 4;
-  char buf[4096+max_utf8_len];
+  char buf[4096 + 4];
   while (!feof(file) && !ferror(file)) {
-    size_t n = fread(buf, 1, sizeof(buf)-max_utf8_len, file);
-    int len = 0;
-
+    size_t n = fread(buf, 1, sizeof(buf) - 4, file);
     if (n == 0)
       continue;
-    if (jvp_utf8_backtrack(buf+(n-1), buf, &len) && len > 0 &&
+
+    char *end = buf + n;
+    int len = 0;
+    if (jvp_utf8_backtrack(end - 1, buf, &len) && len > 0 &&
         !feof(file) && !ferror(file)) {
-      n += fread(buf+n, 1, len, file);
+      n += fread(end, 1, len, file);
     }
 
     if (raw) {
       data = jv_string_append_buf(data, buf, n);
+      if (!jv_is_valid(data))
+        break;
     } else {
       jv_parser_set_buf(parser, buf, n, !feof(file));
       jv value;
@@ -67,6 +69,7 @@ jv jv_load_file(const char* filename, int raw) {
         data = value;
         break;
       }
+      jv_free(value);
     }
   }
   if (!raw)
